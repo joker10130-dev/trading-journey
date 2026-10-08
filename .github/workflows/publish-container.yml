@@ -56,7 +56,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@v6
         id: metadata
         with:
           images: ghcr.io/${{ github.repository }}
@@ -72,7 +72,7 @@ jobs:
           labels: ${{ steps.metadata.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@v6
         id: migrator-metadata
         with:
           images: ghcr.io/${{ github.repository }}
