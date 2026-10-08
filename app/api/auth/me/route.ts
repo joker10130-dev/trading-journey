@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { apiError } from "@/lib/api-response";
 import { requireApiUser } from "@/lib/api-auth";
 
 export const runtime = "nodejs";

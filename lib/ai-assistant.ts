@@ -1,9 +1,14 @@
 import { z } from "zod";
+import { recordAiTokenUsage } from "@/lib/observability";
 
 const providerResponseSchema = z.object({
   choices: z.array(z.object({
     message: z.object({ content: z.string().nullable() }),
   })).min(1),
+  usage: z.object({
+    prompt_tokens: z.number().int().nonnegative(),
+    completion_tokens: z.number().int().nonnegative(),
+  }).optional(),
 });
 
 export class AiProviderError extends Error {
@@ -14,6 +19,7 @@ export class AiProviderError extends Error {
 }
 
 export async function requestAiJson<T extends z.ZodType>(
+  feature: "emotion" | "coach" | "quick-log",
   schema: T,
   systemPrompt: string,
   userContent: string,
@@ -71,6 +77,13 @@ export async function requestAiJson<T extends z.ZodType>(
   const providerData = providerResponseSchema.safeParse(responseBody);
   const content = providerData.success ? providerData.data.choices[0].message.content : null;
   if (!content) throw new AiProviderError("The AI provider returned an empty or invalid response.", 502);
+  if (providerData.success && providerData.data.usage) {
+    recordAiTokenUsage(
+      feature,
+      providerData.data.usage.prompt_tokens,
+      providerData.data.usage.completion_tokens,
+    );
+  }
 
   let result: unknown;
   try {

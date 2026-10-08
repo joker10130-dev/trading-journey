@@ -1,0 +1,13 @@
+.git
+.github
+.next
+coverage
+generated
+node_modules
+out
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
