@@ -18,6 +18,7 @@ import {
   Search,
   Smile,
   Sparkles,
+  Mic,
   Target,
   TrendingUp,
   Upload,
@@ -49,6 +50,7 @@ type DashboardData = {
   winRate: number;
   rewardRiskRatio: number | null;
   maxDrawdown: number;
+  emotionPnlCorrelation: number | null;
   tradingDays: number;
   currentWinningStreak: number;
   longestWinningStreak: number;
@@ -58,6 +60,35 @@ type DashboardData = {
 };
 
 type UserProfile = { id: string; email: string; name: string | null };
+type EmotionAnalysis = {
+  sentiment: "positive" | "neutral" | "negative" | "mixed";
+  composureScore: number;
+  summary: string;
+  cues: string[];
+  reflectionQuestion: string;
+};
+type CoachingResult = {
+  coaching: {
+    summary: string;
+    patterns: { observation: string; evidenceIds: string[]; confidence: "low" | "medium" | "high" }[];
+    reflectionQuestion: string;
+  };
+  evidence: { id: string; type: string; pair?: string; side?: string; strategy?: string | null; pnl?: number; closedAt?: string; weekday?: string; date?: string; emotionScore?: number | null; note?: string }[];
+  tradeCount: number;
+  journalCount: number;
+  periodDays: number;
+};
+
+type BrowserRecognition = {
+  lang: string;
+  interimResults: boolean;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+};
+type BrowserRecognitionConstructor = new () => BrowserRecognition;
 
 const todayUtc = () => new Date().toISOString().slice(0, 10);
 const monthStart = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)).toISOString().slice(0, 10);
@@ -65,6 +96,7 @@ const monthEnd = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.g
 const emptyAnalytics = (currency = "USD"): DashboardData => ({
   currency, netPnl: 0, grossProfit: 0, grossLoss: 0, tradeCount: 0, winningTrades: 0,
   losingTrades: 0, breakevenTrades: 0, winRate: 0, rewardRiskRatio: null, maxDrawdown: 0,
+  emotionPnlCorrelation: null,
   tradingDays: 0, currentWinningStreak: 0, longestWinningStreak: 0,
   daily: [], weekly: [], journals: [],
 });
@@ -162,6 +194,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
   const [selectedTrade, setSelectedTrade] = useState<TradeDay | null>(null);
   const [reflectionDraft, setReflectionDraft] = useState("");
   const [reflectionEmotion, setReflectionEmotion] = useState("");
+  const [emotionAnalysis, setEmotionAnalysis] = useState<EmotionAnalysis | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [quickNote, setQuickNote] = useState("");
@@ -172,6 +205,13 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
   const [requestVersion, setRequestVersion] = useState(0);
   const [tradeDialogOpen, setTradeDialogOpen] = useState(false);
   const [tradeError, setTradeError] = useState("");
+  const [aiError, setAiError] = useState("");
+  const [aiBusy, setAiBusy] = useState<"emotion" | "quick-log" | "coach" | null>(null);
+  const [quickLogText, setQuickLogText] = useState("");
+  const [coaching, setCoaching] = useState<CoachingResult | null>(null);
+  const [speechMessage, setSpeechMessage] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const speechRecognitionRef = useRef<BrowserRecognition | null>(null);
   const [editingTradeId, setEditingTradeId] = useState<string | null>(null);
   const [tradeRecords, setTradeRecords] = useState<TradeRecord[]>([]);
   const [importMessage, setImportMessage] = useState("");
@@ -182,6 +222,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
     closedAt: `${todayUtc()}T10:00`, strategyTag: "",
   });
   const [journalEmotion, setJournalEmotion] = useState("");
+  useEffect(() => () => speechRecognitionRef.current?.stop(), []);
   const calendarDays = useMemo(() => getCalendarDays(year, month), [year, month]);
   const monthName = new Date(year, month).toLocaleString("en-US", { month: "long", year: "numeric" });
   const dateRange = `${new Date(`${from}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${new Date(`${to}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
@@ -299,13 +340,13 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       const body = {
         ...tradeForm,
         entryPrice: Number(tradeForm.entryPrice),
-        exitPrice: Number(tradeForm.exitPrice),
+        exitPrice: tradeForm.exitPrice ? Number(tradeForm.exitPrice) : null,
         stopLoss: tradeForm.stopLoss ? Number(tradeForm.stopLoss) : null,
         takeProfit: tradeForm.takeProfit ? Number(tradeForm.takeProfit) : null,
         lotSize: Number(tradeForm.lotSize),
-        pnl: Number(tradeForm.pnl),
+        pnl: tradeForm.pnl === "" ? null : Number(tradeForm.pnl),
         openedAt: new Date(tradeForm.openedAt).toISOString(),
-        closedAt: new Date(tradeForm.closedAt).toISOString(),
+        closedAt: tradeForm.closedAt ? new Date(tradeForm.closedAt).toISOString() : null,
       };
       const response = await fetch(editingTradeId ? `/api/trades/${editingTradeId}` : "/api/trades", {
         method: editingTradeId ? "PATCH" : "POST",
@@ -377,6 +418,136 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       setRequestVersion((version) => version + 1);
     } catch (error) {
       setApiErrorMessage(error instanceof Error ? error.message : "Could not save reflection.");
+    }
+  };
+
+  const analyzeEmotion = async () => {
+    if (!selectedTrade?.journalId) return;
+    setAiBusy("emotion");
+    setAiError("");
+    setEmotionAnalysis(null);
+    try {
+      const response = await fetch("/api/ai/emotion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ journalId: selectedTrade.journalId }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Could not analyze this reflection.");
+      const analysis = payload.analysis as EmotionAnalysis;
+      setEmotionAnalysis(analysis);
+      setReflectionEmotion(String(analysis.composureScore));
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : "Could not analyze this reflection.");
+    } finally {
+      setAiBusy(null);
+    }
+  };
+
+  const parseQuickLog = async () => {
+    if (!quickLogText.trim()) return;
+    setAiBusy("quick-log");
+    setAiError("");
+    try {
+      const response = await fetch("/api/ai/quick-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: quickLogText.trim() }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Could not parse this trade note.");
+      const draft = payload.draft as {
+        pair: string | null; side: "BUY" | "SELL" | null; entryPrice: number | null; exitPrice: number | null;
+        stopLoss: number | null; takeProfit: number | null; lotSize: number | null; pnl: number | null;
+        currency: string; strategyTag: string | null; openedAt: string | null; closedAt: string | null;
+      };
+      const toLocalInput = (value: string | null, fallback: string) => {
+        const date = value ? new Date(value) : new Date();
+        if (Number.isNaN(date.getTime())) return fallback;
+        const two = (part: number) => String(part).padStart(2, "0");
+        return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}T${two(date.getHours())}:${two(date.getMinutes())}`;
+      };
+      setEditingTradeId(null);
+      setTradeError("");
+      setTradeForm({
+        pair: draft.pair ?? "",
+        side: draft.side ?? "BUY",
+        entryPrice: draft.entryPrice === null ? "" : String(draft.entryPrice),
+        exitPrice: draft.exitPrice === null ? "" : String(draft.exitPrice),
+        stopLoss: draft.stopLoss === null ? "" : String(draft.stopLoss),
+        takeProfit: draft.takeProfit === null ? "" : String(draft.takeProfit),
+        lotSize: draft.lotSize === null ? "" : String(draft.lotSize),
+        pnl: draft.pnl === null ? "" : String(draft.pnl),
+        currency: draft.currency,
+        openedAt: toLocalInput(draft.openedAt, `${todayUtc()}T09:00`),
+        closedAt: draft.closedAt ? toLocalInput(draft.closedAt, "") : "",
+        strategyTag: draft.strategyTag ?? "",
+      });
+      setQuickLogText("");
+      setTradeDialogOpen(true);
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : "Could not parse this trade note.");
+    } finally {
+      setAiBusy(null);
+    }
+  };
+
+  const requestCoaching = async () => {
+    setAiBusy("coach");
+    setAiError("");
+    setCoaching(null);
+    try {
+      const response = await fetch("/api/ai/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currency }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Could not generate coaching.");
+      setCoaching(payload as CoachingResult);
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : "Could not generate coaching.");
+    } finally {
+      setAiBusy(null);
+    }
+  };
+
+  const toggleSpeechInput = () => {
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      return;
+    }
+    const speechWindow = window as Window & {
+      SpeechRecognition?: BrowserRecognitionConstructor;
+      webkitSpeechRecognition?: BrowserRecognitionConstructor;
+    };
+    const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    if (!Recognition) {
+      setSpeechMessage("Speech input is not supported by this browser. You can still type the trade.");
+      return;
+    }
+    const recognition = new Recognition();
+    recognition.lang = navigator.language || "en-US";
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results).map((result) => result[0]?.transcript ?? "").join(" ");
+      setQuickLogText((current) => `${current}${current ? " " : ""}${transcript}`.trim());
+      setSpeechMessage("Speech transcribed. Review the text before asking AI to parse it.");
+    };
+    recognition.onerror = (event) => setSpeechMessage(`Speech recognition failed: ${event.error}.`);
+    recognition.onend = () => {
+      speechRecognitionRef.current = null;
+      setIsListening(false);
+    };
+    speechRecognitionRef.current = recognition;
+    setSpeechMessage("Listening…");
+    setIsListening(true);
+    try {
+      recognition.start();
+    } catch (error) {
+      speechRecognitionRef.current = null;
+      setIsListening(false);
+      setSpeechMessage(error instanceof Error ? `Could not start speech recognition: ${error.message}` : "Could not start speech recognition.");
     }
   };
 
@@ -522,7 +693,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
             <Sparkline values={pnlSpark} color="#16c98d" />
           </MetricCard>
           <article className="metric-card emotion-card">
-            <div className="metric-copy"><div className="metric-title">Journal emotion <Smile size={16} color="#f5a25d" /></div><div className="metric-value">{emotionScores.length ? emotionAverage : "—"}<span className="metric-unit">/ 100</span></div><div className="metric-subtitle">{emotionScores.length ? `${emotionScores.length} scored reflections` : "No emotion scores yet"}</div></div>
+            <div className="metric-copy"><div className="metric-title">Journal composure <Smile size={16} color="#f5a25d" /></div><div className="metric-value">{emotionScores.length ? emotionAverage : "—"}<span className="metric-unit">/ 100</span></div><div className="metric-subtitle">{emotionScores.length ? `${emotionScores.length} scored reflections` : "No composure scores yet"}</div></div>
             <div className="emotion-visual"><EmotionChart values={emotionScores} /><div className="chart-caption"><span>{from.slice(5)}</span><span>{to.slice(5)}</span></div></div>
           </article>
           <article className="metric-card">
@@ -533,7 +704,48 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
             <div className="streak-ring"><Flame size={21} /></div>
           </MetricCard>
         </section>
-        <div className="analytics-strip"><span>Planned R:R <strong>{analytics.rewardRiskRatio === null ? "—" : `${analytics.rewardRiskRatio}:1`}</strong></span><span>Max drawdown <strong className="text-loss">{money(analytics.maxDrawdown, analytics.currency)}</strong></span><span>Closed trades <strong>{analytics.tradeCount}</strong></span><span>{loading ? "Refreshing…" : `${analytics.tradingDays} trading days`}</span></div>
+        <div className="analytics-strip"><span>Planned R:R <strong>{analytics.rewardRiskRatio === null ? "—" : `${analytics.rewardRiskRatio}:1`}</strong></span><span>Max drawdown <strong className="text-loss">{money(analytics.maxDrawdown, analytics.currency)}</strong></span><span>Closed trades <strong>{analytics.tradeCount}</strong></span><span title="Pearson correlation on days with both a saved composure score and realized P&L; not evidence of causation.">Composure/P&amp;L correlation <strong>{analytics.emotionPnlCorrelation === null ? "Need 3+ scored days" : analytics.emotionPnlCorrelation.toFixed(2)}</strong></span><span>{loading ? "Refreshing…" : `${analytics.tradingDays} trading days`}</span></div>
+
+        <section className="ai-tools panel" aria-labelledby="ai-tools-title">
+          <div className="panel-header ai-tools-heading">
+            <div><div className="eyebrow">AI ASSISTANT · OPTIONAL</div><h2 id="ai-tools-title">Reflect, review, and log</h2></div>
+            <span className="beta-tag">BETA</span>
+          </div>
+          <p className="ai-privacy-note">AI actions send only the text or limited account history you choose to analyze to the configured OpenAI provider. Nothing is sent automatically. AI output is an unverified reflection aid, not financial advice.</p>
+          <div className="ai-tool-grid">
+            <div className="ai-tool-card">
+              <h3>Quick trade log</h3>
+              <p>Describe a trade in your own words. Review and edit the extracted draft before saving.</p>
+              <textarea value={quickLogText} maxLength={500} onChange={(event) => setQuickLogText(event.target.value)} placeholder="BUY XAUUSD 0.5 lot at 2650, SL 2640, TP 2670" aria-label="Trade description for AI quick log" />
+              <div className="ai-tool-actions">
+                <button className="button button-quiet" type="button" onClick={toggleSpeechInput}><Mic size={15} /> {isListening ? "Stop listening" : "Use speech"}</button>
+                <button className="button button-primary" type="button" onClick={() => void parseQuickLog()} disabled={!quickLogText.trim() || aiBusy !== null}><Sparkles size={15} /> {aiBusy === "quick-log" ? "Parsing…" : "Create draft"}</button>
+              </div>
+              {speechMessage && <p className="ai-status" role="status">{speechMessage} Speech recognition may be processed by your browser&apos;s speech provider.</p>}
+            </div>
+            <div className="ai-tool-card">
+              <h3>History coaching</h3>
+              <p>Find tentative patterns in up to 100 closed trades and 40 recent journal notes from the last year, in {currency}.</p>
+              <button className="button button-primary" type="button" onClick={() => void requestCoaching()} disabled={aiBusy !== null}><Sparkles size={15} /> {aiBusy === "coach" ? "Reviewing history…" : "Review my history"}</button>
+              {coaching && <div className="ai-result" aria-live="polite">
+                <p>{coaching.coaching.summary}</p>
+                {coaching.coaching.patterns.map((pattern, index) => <article className="ai-pattern" key={`${pattern.observation}-${index}`}>
+                  <strong>{pattern.observation}</strong><span>Confidence: {pattern.confidence}</span>
+                  <ul>{pattern.evidenceIds.map((id) => {
+                    const item = coaching.evidence.find((entry) => entry.id === id);
+                    if (!item) return null;
+                    return <li key={id}>{item.type === "trade"
+                      ? `${item.pair} ${item.side} · ${item.weekday} · ${money(item.pnl ?? 0, currency)}`
+                      : `${item.date} journal · composure ${item.emotionScore ?? "not scored"}/100 · “${item.note ?? ""}”`}</li>;
+                  })}</ul>
+                </article>)}
+                <p className="ai-reflection-question">{coaching.coaching.reflectionQuestion}</p>
+                <small>Based on {coaching.tradeCount} closed trades and {coaching.journalCount} journal entries. Patterns are observational, not causal or predictive.</small>
+              </div>}
+            </div>
+          </div>
+          {aiError && <div className="auth-error ai-error" role="alert">{aiError}</div>}
+        </section>
 
         <div className="dashboard-grid">
           <section className="calendar-panel panel" id="calendar">
@@ -548,7 +760,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
               {calendarDays.map((date, index) => {
                 const monthKey = `${year}-${String(month + 1).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
                 const trade = date.currentMonth ? tradesByDay.get(monthKey) : undefined;
-                return <DayCell key={`${index}-${date.day}`} day={date.day} currentMonth={date.currentMonth} trade={trade} currency={analytics.currency} onSelect={(selected) => { setSelectedTrade(selected); setReflectionDraft(selected.journalId ? selected.note : ""); setReflectionEmotion(selected.emotionScore === null ? "" : String(selected.emotionScore)); }} />;
+                return                 <DayCell key={`${index}-${date.day}`} day={date.day} currentMonth={date.currentMonth} trade={trade} currency={analytics.currency} onSelect={(selected) => { setSelectedTrade(selected); setReflectionDraft(selected.journalId ? selected.note : ""); setReflectionEmotion(selected.emotionScore === null ? "" : String(selected.emotionScore)); setEmotionAnalysis(null); setAiError(""); }} />;
               })}
             </div>
             <div className="calendar-footer"><span><i className="legend-dot green" /> Profit day</span><span><i className="legend-dot red" /> Loss day</span><span className="footer-note">Select a day to view your notes</span></div>
@@ -603,8 +815,14 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
         <div className="eyebrow">{selectedTrade.date}</div><h2 id="trade-modal-title">Day reflection</h2>
         <div className={`modal-pnl ${selectedTrade.pnl > 0 ? "text-profit" : selectedTrade.pnl < 0 ? "text-loss" : ""}`}>{selectedTrade.pnl > 0 ? "+" : selectedTrade.pnl < 0 ? "-" : ""}{money(Math.abs(selectedTrade.pnl), analytics.currency)}<span> · {selectedTrade.trades} {selectedTrade.trades === 1 ? "trade" : "trades"}</span></div>
         <div className="pair-list">{selectedTrade.pairs.map((pair) => <span key={pair}>{pair}</span>)}</div>
-        <label className="reflection-label">Journal reflection<textarea value={reflectionDraft} maxLength={10_000} onChange={(event) => setReflectionDraft(event.target.value)} placeholder="What did you learn from this day?" /></label>
-        <label className="reflection-label reflection-score">Emotion score<select value={reflectionEmotion} onChange={(event) => setReflectionEmotion(event.target.value)}><option value="">Not scored</option>{Array.from({ length: 11 }, (_, index) => <option key={index} value={index * 10}>{index * 10}</option>)}</select></label>
+        <label className="reflection-label">Journal reflection<textarea value={reflectionDraft} maxLength={10_000} onChange={(event) => { setReflectionDraft(event.target.value); setEmotionAnalysis(null); }} placeholder="What did you learn from this day?" /></label>
+        <label className="reflection-label reflection-score">Composure score (0 = reactive, 100 = calm)<select value={reflectionEmotion} onChange={(event) => setReflectionEmotion(event.target.value)}><option value="">Not scored</option>{reflectionEmotion !== "" && Number(reflectionEmotion) % 10 !== 0 && <option value={reflectionEmotion}>{reflectionEmotion} · AI estimate</option>}{Array.from({ length: 11 }, (_, index) => <option key={index} value={index * 10}>{index * 10}</option>)}</select></label>
+        {selectedTrade.journalId && <div className="ai-inline">
+          <button className="button button-quiet" type="button" onClick={() => void analyzeEmotion()} disabled={aiBusy !== null || !reflectionDraft.trim() || reflectionDraft !== selectedTrade.note}><Sparkles size={14} /> {aiBusy === "emotion" ? "Analyzing…" : "Analyze saved reflection"}</button>
+          <small>Submitting sends this saved note to the configured AI provider. The score is not saved until you save the reflection.</small>
+          {emotionAnalysis && <div className="ai-result" aria-live="polite"><strong>{emotionAnalysis.sentiment} · composure {emotionAnalysis.composureScore}/100</strong><p>{emotionAnalysis.summary}</p>{emotionAnalysis.cues.length > 0 && <p>Signals: {emotionAnalysis.cues.join(" · ")}</p>}<p className="ai-reflection-question">{emotionAnalysis.reflectionQuestion}</p></div>}
+          {aiError && <div className="auth-error" role="alert">{aiError}</div>}
+        </div>}
         <div className="trade-form-actions"><button className="button button-primary" onClick={() => void saveCalendarReflection()} disabled={!reflectionDraft.trim()}><Plus size={15} /> Save reflection</button>{selectedTrade.journalId && <button className="button button-quiet" onClick={() => void deleteCalendarReflection()}>Delete reflection</button>}</div>
       </section></div>}
       {tradeDialogOpen && <div className="modal-backdrop" role="presentation" onClick={() => setTradeDialogOpen(false)}><section className="trade-modal panel trade-form-modal" role="dialog" aria-modal="true" aria-labelledby="trade-form-title" onClick={(event) => event.stopPropagation()}>
@@ -615,13 +833,13 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
           <label>Side<select value={tradeForm.side} onChange={(event) => setTradeForm({ ...tradeForm, side: event.target.value as "BUY" | "SELL" })}><option>BUY</option><option>SELL</option></select></label>
           <label>Currency<select value={tradeForm.currency} onChange={(event) => setTradeForm({ ...tradeForm, currency: event.target.value })}>{["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"].map((code) => <option key={code}>{code}</option>)}</select></label>
           <label>Entry price<input type="number" min="0.00000001" step="any" required value={tradeForm.entryPrice} onChange={(event) => setTradeForm({ ...tradeForm, entryPrice: event.target.value })} /></label>
-          <label>Exit price<input type="number" min="0.00000001" step="any" required value={tradeForm.exitPrice} onChange={(event) => setTradeForm({ ...tradeForm, exitPrice: event.target.value })} /></label>
+          <label>Exit price (optional)<input type="number" min="0.00000001" step="any" value={tradeForm.exitPrice} onChange={(event) => setTradeForm({ ...tradeForm, exitPrice: event.target.value })} /></label>
           <label>Stop loss (optional)<input type="number" min="0.00000001" step="any" value={tradeForm.stopLoss} onChange={(event) => setTradeForm({ ...tradeForm, stopLoss: event.target.value })} /></label>
           <label>Take profit (optional)<input type="number" min="0.00000001" step="any" value={tradeForm.takeProfit} onChange={(event) => setTradeForm({ ...tradeForm, takeProfit: event.target.value })} /></label>
           <label>Lot size<input type="number" min="0.0001" step="any" required value={tradeForm.lotSize} onChange={(event) => setTradeForm({ ...tradeForm, lotSize: event.target.value })} /></label>
-          <label>Realized P&amp;L ({tradeForm.currency})<input type="number" step="0.01" required value={tradeForm.pnl} onChange={(event) => setTradeForm({ ...tradeForm, pnl: event.target.value })} /></label>
+          <label>Realized P&amp;L ({tradeForm.currency}, optional)<input type="number" step="0.01" value={tradeForm.pnl} onChange={(event) => setTradeForm({ ...tradeForm, pnl: event.target.value })} /></label>
           <label>Opened at<input type="datetime-local" required value={tradeForm.openedAt} onChange={(event) => setTradeForm({ ...tradeForm, openedAt: event.target.value })} /></label>
-          <label>Closed at<input type="datetime-local" required value={tradeForm.closedAt} onChange={(event) => setTradeForm({ ...tradeForm, closedAt: event.target.value })} /></label>
+          <label>Closed at (optional)<input type="datetime-local" value={tradeForm.closedAt} onChange={(event) => setTradeForm({ ...tradeForm, closedAt: event.target.value })} /></label>
           <label className="trade-form-wide">Strategy tag<input maxLength={80} value={tradeForm.strategyTag} onChange={(event) => setTradeForm({ ...tradeForm, strategyTag: event.target.value })} /></label>
           {tradeError && <div className="auth-error trade-form-wide" role="alert">{tradeError}</div>}
           <div className="trade-form-actions trade-form-wide"><button type="button" className="button button-quiet" onClick={() => setTradeDialogOpen(false)}>Cancel</button><button className="button button-primary"><Plus size={15} /> Save trade</button></div>

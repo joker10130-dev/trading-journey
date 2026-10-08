@@ -103,6 +103,25 @@ export function calculateAnalytics(trades: ClosedTrade[], journals: JournalDay[]
     ) / riskRewardTrades.length)
     : null;
 
+  const dailyPnl = new Map(daily.map((day) => [day.date, day.pnl]));
+  const emotionPairs = journals.flatMap((journal) => {
+    const pnl = dailyPnl.get(dayKey(journal.entryDate));
+    return journal.emotionScore === null || pnl === undefined ? [] : [{ emotion: journal.emotionScore, pnl }];
+  });
+  let emotionPnlCorrelation: number | null = null;
+  if (emotionPairs.length >= 3) {
+    const meanEmotion = emotionPairs.reduce((sum, pair) => sum + pair.emotion, 0) / emotionPairs.length;
+    const meanPnl = emotionPairs.reduce((sum, pair) => sum + pair.pnl, 0) / emotionPairs.length;
+    const covariance = emotionPairs.reduce(
+      (sum, pair) => sum + (pair.emotion - meanEmotion) * (pair.pnl - meanPnl), 0,
+    );
+    const emotionVariance = emotionPairs.reduce((sum, pair) => sum + (pair.emotion - meanEmotion) ** 2, 0);
+    const pnlVariance = emotionPairs.reduce((sum, pair) => sum + (pair.pnl - meanPnl) ** 2, 0);
+    if (emotionVariance > 0 && pnlVariance > 0) {
+      emotionPnlCorrelation = Math.round((covariance / Math.sqrt(emotionVariance * pnlVariance)) * 100) / 100;
+    }
+  }
+
   const weekMap = new Map<string, WeeklySummary>();
   for (const day of daily) {
     const start = startOfUtcWeek(new Date(`${day.date}T00:00:00.000Z`));
@@ -130,6 +149,7 @@ export function calculateAnalytics(trades: ClosedTrade[], journals: JournalDay[]
     breakevenTrades: realized.filter((trade) => trade.pnl === 0).length,
     winRate: tradeCount ? roundMoney((winningTrades / tradeCount) * 100) : 0,
     rewardRiskRatio,
+    emotionPnlCorrelation,
     maxDrawdown: roundMoney(maxDrawdown),
     tradingDays: daily.length,
     currentWinningStreak,

@@ -78,4 +78,21 @@ describe("calculateAnalytics", () => {
     ], []);
     expect(result.rewardRiskRatio).toBe(1.25);
   });
+
+  it("calculates emotion/P&L correlation only from scored journal days with realized trades", () => {
+    const trades = [
+      trade("low", -10, "2026-03-02T10:00:00.000Z"),
+      trade("mid", 0, "2026-03-03T10:00:00.000Z"),
+      trade("high", 10, "2026-03-04T10:00:00.000Z"),
+      trade("unscored", 500, "2026-03-05T10:00:00.000Z"),
+    ];
+    const journals = [10, 50, 90].map((emotionScore, index) => ({
+      id: String(index),
+      entryDate: new Date(`2026-03-0${index + 2}T00:00:00.000Z`),
+      notes: "",
+      emotionScore,
+    }));
+    expect(calculateAnalytics(trades, journals).emotionPnlCorrelation).toBe(1);
+    expect(calculateAnalytics(trades.slice(0, 2), journals.slice(0, 2)).emotionPnlCorrelation).toBeNull();
+  });
 });
