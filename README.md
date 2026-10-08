@@ -2,7 +2,7 @@
 
 A web app for recording and reviewing trades, designed to help traders understand their results, discipline, and trading behavior in one place. Development is organized into four phases, from the core dashboard and data model through analytics, an AI assistant, and deployment.
 
-> **Current status:** Phase 3 features are implemented in the application code, but PostgreSQL setup and end-to-end verification are still required. The app includes account registration/login, user-scoped APIs, analytics, journal/trade CRUD, CSV import, optional AI journal analysis/history coaching, and reviewed AI quick-log drafts. The database is not bundled with the repository.
+> **Current status:** Phases 1–4 are implemented as a deployable starter: Next.js app and APIs, PostgreSQL migrations, analytics, optional AI tools, CI, container builds, and optional OpenTelemetry/Grafana metrics. Production cloud deployment, live PostgreSQL/API integration testing, and operational rate/cost limits remain environment-specific follow-up work.
 
 ## Target stack
 
@@ -13,10 +13,10 @@ A web app for recording and reviewing trades, designed to help traders understan
 | Backend | Next.js Route Handlers for the current Core API; Spring Boot 3.x remains a possible later extraction |
 | Database | PostgreSQL; consider TimescaleDB if time-series data volume warrants it |
 | AI | Server-side OpenAI API integration; browser speech recognition for optional dictation |
-| Testing | JUnit for the backend, Jest or Vitest for the frontend |
+| Testing | ESLint, TypeScript, and Vitest |
 | Deployment and observability | Docker, cloud hosting, OpenTelemetry, and Grafana |
 
-Spring Boot, AI, and infrastructure technologies listed as future options are not installed in the current app.
+Spring Boot, TimescaleDB, Spring AI/LangChain4j, and Whisper remain future options. The current app has a direct server-side OpenAI integration and optional OpenTelemetry metrics.
 
 ## Getting started
 
@@ -41,6 +41,56 @@ npm run build
 The dashboard and API read/write account data in PostgreSQL. Migration commands require a reachable database.
 
 To create a new migration after changing `prisma/schema.prisma`, run `npm run db:migrate` again. The generated Prisma client is created during `npm install` and production builds.
+
+## Development and CI workflow
+
+Install dependencies with `npm ci`, then run the same checks as CI:
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm exec -- prisma validate
+npm run db:deploy
+npm run build
+npm audit --audit-level=high
+```
+
+`npm run db:migrate` creates/applies a development migration; `npm run db:deploy` applies committed migrations in CI and production. GitHub Actions runs these checks against a disposable PostgreSQL service on pull requests and pushes to `main`. Dependabot checks npm and GitHub Actions dependencies weekly/monthly.
+
+### Local Docker stack
+
+Docker Compose runs PostgreSQL, applies migrations, then starts the production Next.js container. The default database password is for local development only. Override it before using the stack beyond a local machine:
+
+```bash
+docker compose up --build
+```
+
+Open `http://localhost:3000`. PostgreSQL and the web app ports bind to loopback. Set `OPENAI_API_KEY` in `.env` only if you want to enable the optional AI tools. Persisted PostgreSQL data is in the `postgres-data` volume. Stop the stack with `docker compose down`; remove local database data only when intentionally resetting it with `docker compose down -v`.
+
+Create and restore local custom-format database backups with the PowerShell scripts:
+
+```powershell
+.\scripts\backup-db.ps1
+.\scripts\restore-db.ps1 -InputPath .\backups\trading-journal-YYYYMMDD-HHMMSS.dump -WhatIf
+.\scripts\restore-db.ps1 -InputPath .\backups\trading-journal-YYYYMMDD-HHMMSS.dump -Confirm
+```
+
+Restore replaces database objects and is intentionally gated by PowerShell confirmation; test it only against a disposable local database first. Local backups and the Compose backup volume are not encrypted, off-site, or a production backup strategy. Configure managed backups and prove restore procedures for a real deployment.
+
+### Optional metrics dashboard
+
+Start the app with the local OpenTelemetry Collector, Prometheus, and Grafana:
+
+```bash
+docker compose -f compose.yaml -f compose.observability.yaml up --build
+```
+
+Grafana is at `http://localhost:3001` (local-only default login `admin` / `local-grafana-password`); Prometheus is at `http://localhost:9090`. Change `GRAFANA_ADMIN_PASSWORD` before sharing the host. The app exports opt-in OpenTelemetry AI request counts, outcome/status, latency, and provider-reported prompt/completion token histograms. Metric labels contain only the AI feature and bounded outcome/status; journal text, trade records, account IDs, and API keys are not metric attributes. Metrics are emitted only when `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT` is configured. No traces or prompts are exported.
+
+### Health and deployment
+
+`GET /api/health` is an unauthenticated readiness check: it returns `200` only when PostgreSQL answers `SELECT 1`, otherwise `503`, with no database connection details. The Docker image uses Next.js standalone output, runs as a non-root user, and includes a health check. A version tag publishes the `runner` image and a matching `-migrator` image to GHCR, after CI checks pass. For a cloud host, configure `DATABASE_URL` and optional server-only AI/OTel variables, run the matching migrator image before switching traffic, then deploy the runner image. Use managed PostgreSQL, TLS, platform secret storage, backups, and restore drills; do not use the local Compose defaults in production.
 
 ## Development roadmap
 
@@ -96,7 +146,7 @@ Timelines are estimates for planning and may change as the scope evolves.
 
 **Implemented:** `/api/ai/emotion`, `/api/ai/coach`, and `/api/ai/quick-log` are authenticated, same-origin mutation routes. They validate inputs and model outputs, cap submitted records/text, enforce a 20-second provider timeout, and report provider/configuration errors without logging private text.
 
-**Still required before production:** Add provider-side and application-side rate/cost limits, measure latency/token usage without retaining user text, verify provider data retention settings, and run authenticated AI/database end-to-end tests. AI integration tests do not make external API calls.
+**Still required before production:** Add provider-side and application-side rate/cost limits, verify provider data-retention settings, and run authenticated AI/database end-to-end tests. AI integration tests do not make external API calls.
 
 **Exit criteria for Phase 4:** AI responses reference relevant data; users can review and correct AI-extracted details before saving; and basic error handling, latency, and cost tracking are in place.
 
@@ -105,13 +155,17 @@ Timelines are estimates for planning and may change as the scope evolves.
 **Goal:** Make development, testing, and deployment workflows repeatable.
 
 - Use AI pair-programming tools for refactoring, boilerplate, and tests, with changes reviewed before merging
-- Add unit and integration tests: JUnit for the API and Jest/Vitest for the UI, depending on the selected tooling
+- Add unit and integration tests with the chosen frontend/API stack
 - Create Docker images and a local development setup for the frontend, backend, and PostgreSQL
 - Configure CI for linting, type checking, tests, and builds
 - Deploy the frontend and backend to suitable hosting and manage secrets through environment variables
-- Add OpenTelemetry/Grafana for API performance and error monitoring
-- Track LLM latency and token usage without logging journal notes or other sensitive data
+- Add OpenTelemetry/Grafana for service performance and error monitoring
+- Track AI request outcomes, latency, and provider-reported token counts without logging journal notes or other sensitive data
 - Prepare database backup and restore procedures, migrations, and a release checklist before launch
+
+**Implemented:** npm lint/typecheck/test/build/audit scripts; GitHub Actions checks with a disposable PostgreSQL service; Dependabot; release-tag publishing of non-root runtime and migration Docker images; local Compose PostgreSQL + migration + web services; database readiness endpoint; local backup/restore scripts; and opt-in OTLP AI-request metrics to Collector/Prometheus/Grafana. Application-wide traces and non-AI API metrics are not instrumented.
+
+**Still required for production:** Configure a cloud account and secrets, deploy the built image or Next.js app, replace local-only credentials, configure managed TLS/PostgreSQL, add backups and prove restoration, and set provider-side/app-side AI rate and budget limits. No cloud deployment is performed from this repository setup.
 
 **Production readiness criteria:** Deployments are repeatable through a pipeline; secrets are not stored in source control; health checks and monitoring are available; and database recovery has been tested.
 
@@ -158,13 +212,16 @@ broker-123,EURUSD,BUY,1.08000,1.08250,1.07800,1.08500,0.50,125.00,USD,London bre
 
 ```text
 app/                  Next.js App Router page, layout, and styles
-app/api/              Auth, trades, journal, analytics, CSV import, and AI routes
+app/api/              Auth, trades, journal, analytics, health, CSV import, and AI routes
 lib/analytics.ts      Pure analytics calculations
 lib/ai-assistant.ts   OpenAI request and output validation helpers
+lib/observability.ts  Privacy-limited OpenTelemetry AI metrics
 lib/csv-import.ts     CSV parsing and validation
 lib/auth.ts           Database-backed session helpers
 prisma/schema.prisma  PostgreSQL data model
-prisma/migrations/    Initial SQL migration
+prisma/migrations/    Versioned SQL migrations
+Dockerfile            Runtime and migration image targets
+compose*.yaml         Local database, application, and optional monitoring services
 .env.example          Sample database connection variable
 ```
 

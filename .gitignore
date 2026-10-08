@@ -4,6 +4,7 @@ out/
 build/
 coverage/
 generated/prisma/
+backups/
 
 .env
 .env.*

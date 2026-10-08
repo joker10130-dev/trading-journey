@@ -1,4 +1,3 @@
-import { Prisma } from "@/generated/prisma/client";
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/api-auth";
 import { calculateAnalytics, type ClosedTrade, type JournalDay } from "@/lib/analytics";

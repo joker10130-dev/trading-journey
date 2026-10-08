@@ -79,19 +79,19 @@ describe("AI output validation", () => {
       }) } }],
     }), { status: 200 })));
 
-    const result = await requestAiJson(emotionAnalysisSchema, "system", "private journal text");
+    const result = await requestAiJson("emotion", emotionAnalysisSchema, "system", "private journal text");
     expect(result.composureScore).toBe(55);
     expect(fetch).toHaveBeenCalledOnce();
   });
 
   it("surfaces missing credentials and provider rate limits explicitly", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
-    await expect(requestAiJson(emotionAnalysisSchema, "system", "text"))
+    await expect(requestAiJson("emotion", emotionAnalysisSchema, "system", "text"))
       .rejects.toBeInstanceOf(AiProviderError);
 
     vi.stubEnv("OPENAI_API_KEY", "test-key");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 429 })));
-    await expect(requestAiJson(emotionAnalysisSchema, "system", "text"))
+    await expect(requestAiJson("emotion", emotionAnalysisSchema, "system", "text"))
       .rejects.toMatchObject({ status: 429 });
   });
 });
