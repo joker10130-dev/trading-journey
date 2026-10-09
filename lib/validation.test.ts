@@ -27,6 +27,7 @@ describe("request validation", () => {
     expect(tradeSchema.safeParse({
       ...base, pnl: 10, closedAt: "2026-03-02T08:00:00Z",
     }).success).toBe(false);
+    expect(tradeSchema.safeParse({ ...base, entryPrice: Number.POSITIVE_INFINITY }).success).toBe(false);
   });
 
   it("validates stop-loss and take-profit placement for the trade side", () => {
