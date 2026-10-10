@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/api-auth";
 import { apiError, hasSameOrigin } from "@/lib/api-response";
-import { CsvImportError, getMaxCsvBytes, parseTradeCsv } from "@/lib/csv-import";
+import { CsvImportError, getMaxCsvBytes, isEightcapOrderHistoryCsv, parseTradeCsv } from "@/lib/csv-import";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -26,9 +26,18 @@ export async function POST(request: Request) {
   if (file.size > getMaxCsvBytes()) return apiError(413, "FILE_TOO_LARGE", "CSV file must be 2 MB or smaller.");
   if (!file.name.toLowerCase().endsWith(".csv")) return apiError(415, "UNSUPPORTED_FILE", "Only .csv files are supported.");
 
+  const csvText = await file.text();
+  if (isEightcapOrderHistoryCsv(csvText)) {
+    return apiError(
+      422,
+      "EIGHTCAP_IMPORT_REQUIRES_PREVIEW",
+      "This is a TradingView/Eightcap order-history export. The generic trade CSV importer does not support order reconstruction yet.",
+    );
+  }
+
   let rows;
   try {
-    rows = parseTradeCsv(await file.text());
+    rows = parseTradeCsv(csvText);
   } catch (error) {
     if (error instanceof CsvImportError) {
       return apiError(400, "INVALID_CSV", error.message, error.row ? { row: error.row } : undefined);
