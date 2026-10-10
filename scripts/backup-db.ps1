@@ -9,6 +9,9 @@ if ($LASTEXITCODE -ne 0 -or -not $containerId) {
 }
 
 $resolvedOutput = [System.IO.Path]::GetFullPath($OutputPath)
+if (Test-Path -LiteralPath $resolvedOutput) {
+  throw "Backup output already exists: $resolvedOutput"
+}
 $outputDirectory = [System.IO.Path]::GetDirectoryName($resolvedOutput)
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 $dumpName = [System.IO.Path]::GetFileName($resolvedOutput)
@@ -19,9 +22,18 @@ if ($LASTEXITCODE -ne 0) {
   throw "PostgreSQL backup failed."
 }
 
+docker compose exec -T db pg_restore --list $containerPath | Out-Null
+if ($LASTEXITCODE -ne 0) {
+  docker compose exec -T db rm -f $containerPath
+  throw "The generated backup failed PostgreSQL archive validation."
+}
+
 docker cp "$($containerId):$containerPath" $resolvedOutput
 if ($LASTEXITCODE -ne 0) {
   throw "Could not copy the backup out of the database container; the temporary container copy remains at $containerPath."
+}
+if (-not (Test-Path -LiteralPath $resolvedOutput -PathType Leaf) -or (Get-Item -LiteralPath $resolvedOutput).Length -eq 0) {
+  throw "The copied backup is missing or empty: $resolvedOutput"
 }
 
 docker compose exec -T db rm -f $containerPath

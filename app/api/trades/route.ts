@@ -41,6 +41,13 @@ function serializeTrade(trade: {
   currency: string;
   strategyTag: string | null;
   externalId: string | null;
+  brokerImportId: string | null;
+  sourcePositionId: string | null;
+  sourceOrderIds: string[];
+  brokerClosedPnl: Prisma.Decimal | null;
+  brokerNetPnl: Prisma.Decimal | null;
+  commission: Prisma.Decimal | null;
+  reconciliationDifference: Prisma.Decimal | null;
   openedAt: Date;
   closedAt: Date | null;
   createdAt: Date;
@@ -54,6 +61,13 @@ function serializeTrade(trade: {
     takeProfit: trade.takeProfit === null ? null : Number(trade.takeProfit),
     lotSize: Number(trade.lotSize),
     pnl: trade.pnl === null ? null : Number(trade.pnl),
+    brokerImportId: trade.brokerImportId,
+    sourcePositionId: trade.sourcePositionId,
+    sourceOrderIds: trade.sourceOrderIds,
+    brokerClosedPnl: trade.brokerClosedPnl === null ? null : Number(trade.brokerClosedPnl),
+    brokerNetPnl: trade.brokerNetPnl === null ? null : Number(trade.brokerNetPnl),
+    commission: trade.commission === null ? null : Number(trade.commission),
+    reconciliationDifference: trade.reconciliationDifference === null ? null : Number(trade.reconciliationDifference),
   };
 }
 

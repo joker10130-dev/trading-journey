@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { dateRangeSchema, journalSchema, tradeSchema } from "@/lib/validation";
+import {
+  dateRangeSchema,
+  emailRequestSchema,
+  journalSchema,
+  passwordResetSchema,
+  tokenSchema,
+  tradeSchema,
+} from "@/lib/validation";
 
 describe("request validation", () => {
   it("accepts a complete trade and normalizes its pair and currency", () => {
@@ -47,5 +54,13 @@ describe("request validation", () => {
     expect(dateRangeSchema.safeParse({ from: "2026-01-01", to: "2026-02-01" }).success).toBe(true);
     expect(dateRangeSchema.safeParse({ from: "2026-03-02", to: "2026-01-01" }).success).toBe(false);
     expect(dateRangeSchema.safeParse({ from: "2000-01-01", to: "2026-01-01" }).success).toBe(false);
+  });
+
+  it("normalizes recovery email addresses and validates one-time token inputs", () => {
+    expect(emailRequestSchema.parse({ email: " Trader@Example.com " }).email).toBe("trader@example.com");
+    expect(emailRequestSchema.safeParse({ email: "not-an-email" }).success).toBe(false);
+    expect(tokenSchema.safeParse({ token: "too-short" }).success).toBe(false);
+    expect(passwordResetSchema.safeParse({ token: "a".repeat(32), password: "short" }).success).toBe(false);
+    expect(passwordResetSchema.safeParse({ token: "a".repeat(32), password: "correct horse battery" }).success).toBe(true);
   });
 });

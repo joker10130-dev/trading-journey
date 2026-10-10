@@ -4,7 +4,7 @@ WORKDIR /app
 
 FROM base AS dependencies
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 FROM base AS builder
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build?schema=public"

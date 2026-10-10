@@ -28,7 +28,7 @@ npm run db:migrate
 npm run dev
 ```
 
-Set `DATABASE_URL` in a local `.env` file before running migrations or the app. Open [http://localhost:3000](http://localhost:3000), create an account, and sign in.
+Set `DATABASE_URL` in a local `.env` file before running migrations or the app. Set the email settings below to enable registration and account recovery. Open [http://localhost:3000](http://localhost:3000), create an account, verify its email, and sign in.
 
 Run the TypeScript check and create a production build with:
 
@@ -92,6 +92,24 @@ Grafana is at `http://localhost:3001` (local-only default login `admin` / `local
 
 `GET /api/health` is an unauthenticated readiness check: it returns `200` only when PostgreSQL answers `SELECT 1`, otherwise `503`, with no database connection details. The Docker image uses Next.js standalone output, runs as a non-root user, and includes a health check. A version tag publishes the `runner` image and a matching `-migrator` image to GHCR, after CI checks pass. For a cloud host, configure `DATABASE_URL` and optional server-only AI/OTel variables, run the matching migrator image before switching traffic, then deploy the runner image. Use managed PostgreSQL, TLS, platform secret storage, backups, and restore drills; do not use the local Compose defaults in production.
 
+### Authentication and production security
+
+New registrations require email verification before sign-in. Verification links expire after 24 hours; password-reset links expire after 30 minutes and are single-use. Resetting a password revokes all active sessions. Existing users are marked verified by the auth-hardening migration to avoid locking them out. Auth endpoints have database-backed IP and account/token rate limits.
+
+Configure these server-side variables for local registration or account recovery:
+
+```env
+APP_BASE_URL="https://your-public-host"
+RESEND_API_KEY="your-resend-api-key"
+EMAIL_FROM="Trading Journal <accounts@example.com>"
+AUTH_RATE_LIMIT_SECRET="a-long-random-secret"
+AUTH_CLIENT_IP_HEADER="x-forwarded-for"
+```
+
+For local-only development, `APP_BASE_URL` may be `http://localhost:3000`. An email provider is still required to register or send recovery emails. In production, use an HTTPS `APP_BASE_URL`, keep provider credentials and the rate-limit secret in the hosting platform's secret store, and configure `AUTH_CLIENT_IP_HEADER` to a header that the trusted ingress/proxy overwrites; never trust an arbitrary client-supplied forwarding header. If `AUTH_RATE_LIMIT_SECRET` is omitted, the database connection string is used as the HMAC key. Production responses add HSTS and the app also sends content-type, framing, referrer, and permissions security headers. Session cookies are HttpOnly, SameSite Strict, and Secure in production.
+
+Before deploying this hardening, run `npm run db:deploy` so `AccountToken`, `AuthRateLimit`, and `User.emailVerifiedAt` exist. The migration preserves existing accounts as verified; new users must verify their address. Registration can persist the account even if the provider fails to deliver its first email; the login screen offers a rate-limited resend action.
+
 ## Development roadmap
 
 Timelines are estimates for planning and may change as the scope evolves.
@@ -125,11 +143,11 @@ Timelines are estimates for planning and may change as the scope evolves.
 - Store decimal price/P&L fields in PostgreSQL and use UTC timestamps for trade times and journal-day boundaries
 - Use PostgreSQL as the initial database; evaluate TimescaleDB only if data volume or query patterns justify it
 
-**Implemented in the codebase:** Next.js Route Handlers are used as the Core API for this starter. Authentication routes are `/api/auth/register`, `/api/auth/login`, `/api/auth/me`, and `/api/auth/logout`. Data routes include `/api/trades`, `/api/trades/:id`, `/api/journals`, `/api/journals/:id`, `/api/analytics`, and `/api/import/csv`. Schema and initial migration are in `prisma/`.
+**Implemented in the codebase:** Next.js Route Handlers are used as the Core API for this starter. Authentication routes include registration, sign-in/out, session lookup, email verification, verification resend, password-reset request, and password reset. Data routes include `/api/trades`, `/api/trades/:id`, `/api/journals`, `/api/journals/:id`, `/api/analytics`, and `/api/import/csv`. Schema and versioned migrations are in `prisma/`.
 
 **Analytics rules:** Only trades with both `closedAt` and non-null `pnl` contribute to realized metrics. Win rate counts positive-P&L trades over all realized trades, including breakeven trades in the denominator. Planned R:R is the average target-to-entry distance divided by stop-to-entry distance for realized trades that have both stop-loss and take-profit values; it is not inferred from P&L. Maximum drawdown is the largest peak-to-trough decline in cumulative realized P&L within the requested range, with starting equity set to zero. Winning-day streaks count consecutive trading days with positive net P&L; calendar days without a closed trade are ignored and a zero/loss day breaks the streak. Emotion/P&L correlation is Pearson's r on days with both a saved composure score and realized P&L, only when there are at least three matched days and both values vary; it is descriptive and does not imply causation. Timestamps and weekly grouping use UTC.
 
-**Still required before production:** Configure and verify a real PostgreSQL instance, run migrations, perform authenticated API end-to-end tests, add rate limiting and account recovery/email verification, review the broker-specific CSV formats, and review financial/currency semantics with real account data.
+**Still required before production:** Configure and verify a real PostgreSQL instance, run migrations, perform authenticated API end-to-end tests, review the broker-specific CSV formats, and review financial/currency semantics with real account data.
 
 **Exit criteria for Phase 3:** PostgreSQL-backed flows pass end-to-end tests; analytics rules are accepted and verified; and CSV imports are validated against the intended broker statements.
 
@@ -173,14 +191,18 @@ Timelines are estimates for planning and may change as the scope evolves.
 
 The current schema is in `prisma/schema.prisma`, with migration history in `prisma/migrations/`:
 
-- **User:** Account owner, normalized unique email, and password hash
+- **User:** Account owner, normalized unique email, password hash, and email-verification timestamp
 - **Session:** Hashed random session token and expiry, linked to one account
+- **AccountToken:** Hashed, expiring, single-use email-verification or password-reset token
+- **AuthRateLimit:** HMAC-keyed fixed-window request counter for authentication abuse controls
 - **Trade:** Pair, BUY/SELL side, entry/exit, stop-loss and take-profit prices, lot size, realized P&L, currency, strategy tag, external import ID, and open/close times
 - **TradingJournal:** UTC day, notes, optional 0–100 composure score (manual or AI-estimated), and screenshot URLs
 
 Trades and journals are scoped to their owner. Before production use, review money precision, account currency conversion, broker timezone interpretation, image storage, and data retention policies.
 
 ## Environment variables
+
+Authentication registration is limited to 5 requests per IP and 3 per email per hour. Login is limited to 30 requests per IP and 10 per email per 15 minutes. Counters are stored in PostgreSQL, with HMAC-SHA-256 hashed keys so raw email/IP values are not persisted in the rate-limit table. Set a long random `AUTH_RATE_LIMIT_SECRET` in production; the database URL is used as a fallback. `AUTH_CLIENT_IP_HEADER` must name a header overwritten by your trusted ingress/proxy; do not trust a client-controlled forwarding header. The local default is `x-forwarded-for`. Both variables are included in `.env.example` and passed into the Compose app.
 
 A sample connection string is provided in `.env.example`:
 
@@ -222,13 +244,13 @@ prisma/schema.prisma  PostgreSQL data model
 prisma/migrations/    Versioned SQL migrations
 Dockerfile            Runtime and migration image targets
 compose*.yaml         Local database, application, and optional monitoring services
-.env.example          Sample database connection variable
+.env.example          Sample database, email, and authentication settings
 ```
 
 ## Scope and limitations
 
 - A PostgreSQL server is required to register/sign in or use the dashboard APIs; database-backed end-to-end behavior could not be verified without a running database.
-- Account authentication is a starter implementation. Add abuse controls, account recovery, email verification, and operational session cleanup before exposing it publicly.
+- Authentication includes rate limits, email verification, and single-use password recovery, but still needs production email/proxy configuration and an operational session-cleanup policy before public exposure.
 - The analytics currency selector reports P&L within one currency at a time. It does not convert between currencies.
 - CSV timestamp conventions depend on the source broker; normalize to UTC and verify imported values before relying on analytics.
 - AI routes require server-side `OPENAI_API_KEY`; AI tools remain unavailable until it is configured.

@@ -1,7 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownRight,
   ArrowLeft,
@@ -25,59 +24,39 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useDashboardData } from "@/app/dashboard/_hooks/use-dashboard-data";
+import {
+  DayCell,
+  EmotionChart,
+  EquityCurve,
+  MetricCard,
+  Sparkline,
+} from "@/app/dashboard/_components/dashboard-visualizations";
+import {
+  getCalendarDays,
+  money,
+  monthEnd,
+  monthStart,
+  todayUtc,
+} from "@/app/dashboard/_lib/dashboard-utils";
+import { z } from "zod";
+import {
+  coachingResultSchema,
+  eightcapPreviewSchema,
+  emotionAnalysisSchema,
+  parseApiPayload,
+  tradingAccountSchema,
+  type CoachingResult,
+  type EmotionAnalysis,
+  type EightcapPreview,
+  type TradeDay,
+  type TradeRecord,
+  type TradingAccount,
+  type UserProfile,
+} from "@/app/dashboard/_lib/dashboard-types";
 
 const filters = ["This Month", "Last Month", "Last Quarter", "Last Year", "Eternal"];
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const money = (value: number, currency = "USD") =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
-
-type TradeDay = { date: string; day: number; pnl: number; trades: number; winningTrades: number; pairs: string[]; note: string; journalId?: string; emotionScore: number | null };
-type TradeRecord = {
-  id: string; pair: string; side: "BUY" | "SELL"; entryPrice: number; exitPrice: number | null;
-  stopLoss: number | null; takeProfit: number | null;
-  lotSize: number; pnl: number | null; currency: string; strategyTag: string | null;
-  openedAt: string; closedAt: string | null;
-};
-type DashboardData = {
-  currency: string;
-  netPnl: number;
-  grossProfit: number;
-  grossLoss: number;
-  tradeCount: number;
-  winningTrades: number;
-  losingTrades: number;
-  breakevenTrades: number;
-  winRate: number;
-  rewardRiskRatio: number | null;
-  maxDrawdown: number;
-  emotionPnlCorrelation: number | null;
-  tradingDays: number;
-  currentWinningStreak: number;
-  longestWinningStreak: number;
-  daily: { date: string; pnl: number; tradeCount: number; winningTrades: number; pairs: string[] }[];
-  weekly: { weekStart: string; weekEnd: string; pnl: number; tradeCount: number }[];
-  journals: { id: string; date: string; notes: string; emotionScore: number | null }[];
-};
-
-type UserProfile = { id: string; email: string; name: string | null };
-type EmotionAnalysis = {
-  sentiment: "positive" | "neutral" | "negative" | "mixed";
-  composureScore: number;
-  summary: string;
-  cues: string[];
-  reflectionQuestion: string;
-};
-type CoachingResult = {
-  coaching: {
-    summary: string;
-    patterns: { observation: string; evidenceIds: string[]; confidence: "low" | "medium" | "high" }[];
-    reflectionQuestion: string;
-  };
-  evidence: { id: string; type: string; pair?: string; side?: string; strategy?: string | null; pnl?: number; closedAt?: string; weekday?: string; date?: string; emotionScore?: number | null; note?: string }[];
-  tradeCount: number;
-  journalCount: number;
-  periodDays: number;
-};
 
 type BrowserRecognition = {
   lang: string;
@@ -90,97 +69,6 @@ type BrowserRecognition = {
 };
 type BrowserRecognitionConstructor = new () => BrowserRecognition;
 
-const todayUtc = () => new Date().toISOString().slice(0, 10);
-const monthStart = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)).toISOString().slice(0, 10);
-const monthEnd = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
-const emptyAnalytics = (currency = "USD"): DashboardData => ({
-  currency, netPnl: 0, grossProfit: 0, grossLoss: 0, tradeCount: 0, winningTrades: 0,
-  losingTrades: 0, breakevenTrades: 0, winRate: 0, rewardRiskRatio: null, maxDrawdown: 0,
-  emotionPnlCorrelation: null,
-  tradingDays: 0, currentWinningStreak: 0, longestWinningStreak: 0,
-  daily: [], weekly: [], journals: [],
-});
-
-function Sparkline({ values, color }: { values: number[]; color: string }) {
-  const points = values.map((value, index) => `${(index / (values.length - 1)) * 100},${34 - value * 0.38}`).join(" ");
-  return (
-    <svg className="sparkline" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
-      <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function EmotionChart({ values }: { values: number[] }) {
-  const safeValues = values.length ? values : [0, 0];
-  const min = Math.min(...safeValues, 0);
-  const max = Math.max(...safeValues, 100);
-  const points = safeValues.map((value, index) => `${(index / Math.max(safeValues.length - 1, 1)) * 300},${68 - ((value - min) / Math.max(max - min, 1)) * 58}`).join(" ");
-  return (
-    <svg className="emotion-chart" viewBox="0 0 300 72" preserveAspectRatio="none" role="img" aria-label="Emotion trend over the last 24 sessions">
-      <defs>
-        <linearGradient id="emotion-fill" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#a58bfa" stopOpacity=".25" />
-          <stop offset="100%" stopColor="#a58bfa" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polygon points={`0,72 ${points} 300,72`} fill="url(#emotion-fill)" />
-      <polyline points={points} fill="none" stroke="#a58bfa" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function MetricCard({
-  title, value, subtitle, icon: Icon, color, children,
-}: {
-  title: string; value: string; subtitle: ReactNode; icon: typeof TrendingUp; color: string; children: ReactNode;
-}) {
-  return (
-    <article className="metric-card">
-      <div className="metric-copy">
-        <div className="metric-title">{title}<Icon size={16} color={color} strokeWidth={2.3} /></div>
-        <div className="metric-value">{value}</div>
-        <div className="metric-subtitle">{subtitle}</div>
-      </div>
-      <div className="metric-visual">{children}</div>
-    </article>
-  );
-}
-
-function DayCell({ day, currentMonth, trade, currency, onSelect }: {
-  day: number; currentMonth: boolean; trade?: TradeDay; currency: string; onSelect: (trade: TradeDay) => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={`day-cell ${!currentMonth ? "outside-month" : ""} ${trade ? trade.pnl > 0 ? "positive" : trade.pnl < 0 ? "negative" : "flat" : ""}`}
-      onClick={() => trade && onSelect(trade)}
-      disabled={!trade}
-      aria-label={trade ? `${day}, ${money(trade.pnl, currency)}, ${trade.trades} trades` : `${day}`}
-    >
-      <span className="day-number">{day}</span>
-      {trade && (
-        <span className="day-trade">
-          <strong>{trade.pnl > 0 ? "+" : trade.pnl < 0 ? "-" : ""}{money(Math.abs(trade.pnl), currency)}</strong>
-          <small>{trade.trades} {trade.trades === 1 ? "trade" : "trades"}</small>
-        </span>
-      )}
-    </button>
-  );
-}
-
-function getCalendarDays(year: number, month: number) {
-  const firstWeekday = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const daysInPreviousMonth = new Date(year, month, 0).getDate();
-  const totalCells = Math.ceil((firstWeekday + daysInMonth) / 7) * 7;
-  return Array.from({ length: totalCells }, (_, index) => {
-    const date = index - firstWeekday + 1;
-    if (date < 1) return { day: daysInPreviousMonth + date, currentMonth: false };
-    if (date > daysInMonth) return { day: date - daysInMonth, currentMonth: false };
-    return { day: date, currentMonth: true };
-  });
-}
-
 export default function DashboardClient({ user }: { user: UserProfile }) {
   const router = useRouter();
   const initialDate = new Date();
@@ -191,6 +79,14 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
   const [currency, setCurrency] = useState("USD");
   const [activeFilter, setActiveFilter] = useState("This Month");
   const [query, setQuery] = useState("");
+  const {
+    analytics,
+    tradeRecords,
+    loading,
+    errorMessage: apiErrorMessage,
+    setErrorMessage: setApiErrorMessage,
+    refresh,
+  } = useDashboardData({ from, to, currency, query });
   const [selectedTrade, setSelectedTrade] = useState<TradeDay | null>(null);
   const [reflectionDraft, setReflectionDraft] = useState("");
   const [reflectionEmotion, setReflectionEmotion] = useState("");
@@ -199,10 +95,6 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [quickNote, setQuickNote] = useState("");
   const [savedNote, setSavedNote] = useState("");
-  const [analytics, setAnalytics] = useState<DashboardData>(emptyAnalytics());
-  const [loading, setLoading] = useState(true);
-  const [apiErrorMessage, setApiErrorMessage] = useState("");
-  const [requestVersion, setRequestVersion] = useState(0);
   const [tradeDialogOpen, setTradeDialogOpen] = useState(false);
   const [tradeError, setTradeError] = useState("");
   const [aiError, setAiError] = useState("");
@@ -213,8 +105,14 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
   const [isListening, setIsListening] = useState(false);
   const speechRecognitionRef = useRef<BrowserRecognition | null>(null);
   const [editingTradeId, setEditingTradeId] = useState<string | null>(null);
-  const [tradeRecords, setTradeRecords] = useState<TradeRecord[]>([]);
   const [importMessage, setImportMessage] = useState("");
+  const [tradingAccounts, setTradingAccounts] = useState<TradingAccount[]>([]);
+  const [eightcapDialogOpen, setEightcapDialogOpen] = useState(false);
+  const [eightcapFile, setEightcapFile] = useState<File | null>(null);
+  const [eightcapAccountId, setEightcapAccountId] = useState("");
+  const [eightcapTimezone, setEightcapTimezone] = useState("Asia/Bangkok");
+  const [eightcapPreview, setEightcapPreview] = useState<EightcapPreview | null>(null);
+  const [eightcapBusy, setEightcapBusy] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
   const [tradeForm, setTradeForm] = useState({
     pair: "", side: "BUY" as "BUY" | "SELL", entryPrice: "", exitPrice: "", stopLoss: "", takeProfit: "",
@@ -222,10 +120,25 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
     closedAt: `${todayUtc()}T10:00`, strategyTag: "",
   });
   const [journalEmotion, setJournalEmotion] = useState("");
+  const [createAccountDialogOpen, setCreateAccountDialogOpen] = useState(false);
+  const [createAccountForm, setCreateAccountForm] = useState({ name: "", baseCurrency: "USD" });
+  const [createAccountBusy, setCreateAccountBusy] = useState(false);
+  const [createAccountError, setCreateAccountError] = useState("");
   useEffect(() => () => speechRecognitionRef.current?.stop(), []);
+  useEffect(() => {
+    if (!eightcapDialogOpen) return;
+    void fetch("/api/trading-accounts", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error?.message ?? "Could not load trading accounts.");
+        const accounts = parseApiPayload(z.array(tradingAccountSchema), payload.accounts, "trading accounts");
+        setTradingAccounts(accounts);
+        setEightcapAccountId((current) => current || accounts[0]?.id || "");
+      })
+      .catch((error) => setApiErrorMessage(error instanceof Error ? error.message : "Could not load trading accounts."));
+  }, [eightcapDialogOpen]);
   const calendarDays = useMemo(() => getCalendarDays(year, month), [year, month]);
   const monthName = new Date(year, month).toLocaleString("en-US", { month: "long", year: "numeric" });
-  const dateRange = `${new Date(`${from}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${new Date(`${to}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
   const journalByDate = new Map(analytics.journals.map((journal) => [journal.date, journal]));
   const tradesByDay = new Map<string, TradeDay>();
   for (const day of analytics.daily) {
@@ -261,43 +174,6 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
     pnl: week.pnl,
     trades: week.tradeCount,
   }));
-  const monthRange = dateRange;
-
-  const loadAnalytics = useCallback(async (signal: AbortSignal) => {
-    setLoading(true);
-    setApiErrorMessage("");
-    try {
-      const params = new URLSearchParams({ from, to, currency, q: query });
-      const [response, tradesResponse] = await Promise.all([
-        fetch(`/api/analytics?${params}`, { cache: "no-store", signal }),
-        fetch(`/api/trades?${params}&limit=100`, { cache: "no-store", signal }),
-      ]);
-      if (response.status === 401 || tradesResponse.status === 401) {
-        router.replace("/login");
-        return;
-      }
-      const [payload, tradePayload] = await Promise.all([response.json(), tradesResponse.json()]);
-      if (!response.ok) throw new Error(payload.error?.message ?? "Could not load analytics.");
-      if (!tradesResponse.ok) throw new Error(tradePayload.error?.message ?? "Could not load trades.");
-      setAnalytics(payload as DashboardData);
-      setTradeRecords(tradePayload.trades as TradeRecord[]);
-    } catch (error) {
-      if (signal.aborted) return;
-      setApiErrorMessage(error instanceof Error ? error.message : "Could not load analytics.");
-    } finally {
-      if (!signal.aborted) setLoading(false);
-    }
-  }, [currency, from, query, router, to]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => void loadAnalytics(controller.signal), 180);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [loadAnalytics, requestVersion]);
-
   const shiftMonth = (amount: number) => {
     const next = new Date(Date.UTC(year, month + amount, 1));
     setMonth(next.getUTCMonth());
@@ -361,7 +237,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       setTradeDialogOpen(false);
       setEditingTradeId(null);
       setTradeForm({ pair: "", side: "BUY", entryPrice: "", exitPrice: "", stopLoss: "", takeProfit: "", lotSize: "", pnl: "", currency, openedAt: `${todayUtc()}T09:00`, closedAt: `${todayUtc()}T10:00`, strategyTag: "" });
-      setRequestVersion((version) => version + 1);
+      refresh();
     } catch (error) {
       setTradeError(error instanceof Error ? error.message : "Could not save this trade.");
     }
@@ -394,7 +270,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       const response = await fetch(`/api/trades/${trade.id}`, { method: "DELETE" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Could not delete trade.");
-      setRequestVersion((version) => version + 1);
+      refresh();
     } catch (error) {
       setApiErrorMessage(error instanceof Error ? error.message : "Could not delete trade.");
     }
@@ -415,7 +291,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Could not save reflection.");
       setSelectedTrade(null);
-      setRequestVersion((version) => version + 1);
+      refresh();
     } catch (error) {
       setApiErrorMessage(error instanceof Error ? error.message : "Could not save reflection.");
     }
@@ -434,7 +310,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Could not analyze this reflection.");
-      const analysis = payload.analysis as EmotionAnalysis;
+      const analysis = parseApiPayload(emotionAnalysisSchema, payload.analysis, "emotion analysis");
       setEmotionAnalysis(analysis);
       setReflectionEmotion(String(analysis.composureScore));
     } catch (error) {
@@ -504,7 +380,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Could not generate coaching.");
-      setCoaching(payload as CoachingResult);
+      setCoaching(parseApiPayload(coachingResultSchema, payload, "coaching"));
     } catch (error) {
       setAiError(error instanceof Error ? error.message : "Could not generate coaching.");
     } finally {
@@ -558,7 +434,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Could not delete reflection.");
       setSelectedTrade(null);
-      setRequestVersion((version) => version + 1);
+      refresh();
     } catch (error) {
       setApiErrorMessage(error instanceof Error ? error.message : "Could not delete reflection.");
     }
@@ -583,7 +459,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       setQuickNote("");
       setJournalEmotion("");
       setSavedNote(notes);
-      setRequestVersion((version) => version + 1);
+      refresh();
     } catch (error) {
       setApiErrorMessage(error instanceof Error ? error.message : "Could not save the journal entry.");
     }
@@ -591,6 +467,14 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
 
   const importCsv = async (file?: File) => {
     if (!file) return;
+    const firstLine = (await file.slice(0, 2048).text()).split(/\r?\n/, 1)[0] ?? "";
+    const normalizedHeader = firstLine.toLowerCase().replace(/[^a-z0-9,]/g, "");
+    if (normalizedHeader.includes("symbol,side,type,qty,filledqty") && normalizedHeader.includes("positionid")) {
+      setEightcapFile(file);
+      setEightcapPreview(null);
+      setEightcapDialogOpen(true);
+      return;
+    }
     setImportMessage("");
     const form = new FormData();
     form.set("file", file);
@@ -602,9 +486,80 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
         return;
       }
       setImportMessage(`Imported ${payload.imported} trades; skipped ${payload.duplicates} duplicates.`);
-      setRequestVersion((version) => version + 1);
+      refresh();
     } catch (error) {
       setApiErrorMessage(error instanceof Error ? error.message : "CSV import failed.");
+    }
+  };
+
+  const createAccount = async () => {
+    if (!createAccountForm.name.trim()) {
+      setCreateAccountError("Account name is required.");
+      return;
+    }
+    setCreateAccountBusy(true);
+    setCreateAccountError("");
+    try {
+      const response = await fetch("/api/trading-accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createAccountForm),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Could not create account.");
+      const account = parseApiPayload(tradingAccountSchema, payload.account, "trading account");
+      setTradingAccounts((current) => [...current, account]);
+      setEightcapAccountId(account.id);
+      setCreateAccountForm({ name: "", baseCurrency: "USD" });
+      setCreateAccountDialogOpen(false);
+    } catch (error) {
+      setCreateAccountError(error instanceof Error ? error.message : "Could not create account.");
+    } finally {
+      setCreateAccountBusy(false);
+    }
+  };
+
+  const previewEightcap = async () => {
+    if (!eightcapFile || !eightcapTimezone.trim()) return;
+    setEightcapBusy(true);
+    setApiErrorMessage("");
+    const form = new FormData();
+    form.set("file", eightcapFile);
+    form.set("accountId", eightcapAccountId);
+    form.set("timezone", eightcapTimezone);
+    try {
+      const response = await fetch("/api/import/eightcap/preview", { method: "POST", body: form });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Could not preview Eightcap CSV.");
+      setEightcapPreview(parseApiPayload(eightcapPreviewSchema, payload, "Eightcap preview"));
+    } catch (error) {
+      setApiErrorMessage(error instanceof Error ? error.message : "Could not preview Eightcap CSV.");
+    } finally {
+      setEightcapBusy(false);
+    }
+  };
+
+  const confirmEightcap = async () => {
+    if (!eightcapFile || !eightcapAccountId || !eightcapTimezone.trim()) return;
+    setEightcapBusy(true);
+    setApiErrorMessage("");
+    const form = new FormData();
+    form.set("file", eightcapFile);
+    form.set("accountId", eightcapAccountId);
+    form.set("timezone", eightcapTimezone);
+    try {
+      const response = await fetch("/api/import/eightcap", { method: "POST", body: form });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Could not import Eightcap CSV.");
+      setImportMessage(`Imported ${payload.importedOrders} broker orders and linked ${payload.linkedTrades} trades. Reconciliation: broker ${payload.reconciliation.brokerNetPnl}, app ${payload.reconciliation.importedNetPnl}, commission ${payload.reconciliation.commissionTotal}, difference ${payload.reconciliation.difference}.`);
+      setEightcapDialogOpen(false);
+      setEightcapFile(null);
+      setEightcapPreview(null);
+      refresh();
+    } catch (error) {
+      setApiErrorMessage(error instanceof Error ? error.message : "Could not import Eightcap CSV.");
+    } finally {
+      setEightcapBusy(false);
     }
   };
 
@@ -683,10 +638,16 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
           <select className="date-select currency-select" aria-label="P&L currency" value={currency} onChange={(event) => setCurrency(event.target.value)}>
             {["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"].map((code) => <option key={code} value={code}>{code}</option>)}
           </select>
-          <button className="date-select" onClick={() => { const selected = new Date(Date.UTC(year, month, 1)); setFrom(monthStart(selected)); setTo(monthEnd(selected)); setActiveFilter(""); }}><CalendarDays size={15} /> {monthRange} <ChevronDown size={14} /></button>
         </div>
         {apiErrorMessage && <div className="dashboard-alert" role="alert">{apiErrorMessage}<button onClick={() => setApiErrorMessage("")} aria-label="Dismiss error"><X size={15} /></button></div>}
         {importMessage && <div className="dashboard-notice" role="status">{importMessage}<button onClick={() => setImportMessage("")} aria-label="Dismiss import status"><X size={15} /></button></div>}
+
+        <section className="panel" style={{ marginTop: "17px", padding: "20px" }}>
+          <div className="panel-header">
+            <div><div className="eyebrow">EQUITY TRACKING</div><h2>Account equity curve</h2></div>
+          </div>
+          <EquityCurve dailyData={analytics.daily} />
+        </section>
 
         <section className="metrics-grid" id="performance" aria-label="Trading performance" aria-busy={loading}>
           <MetricCard title="Net P&L" value={money(analytics.netPnl, analytics.currency)} subtitle={<span className={analytics.netPnl >= 0 ? "text-profit" : "text-loss"}>{analytics.netPnl >= 0 ? "↗ Realized profit" : "↘ Realized loss"}</span>} icon={TrendingUp} color="#16c98d">
@@ -792,11 +753,11 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
           {tradeRecords.length ? <div className="trade-table-wrap"><table className="trade-table">
             <thead><tr><th>Pair</th><th>Side</th><th>Entry → Exit</th><th>Closed</th><th>P&amp;L</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{tradeRecords.map((trade) => <tr key={trade.id}>
-              <td><strong>{trade.pair}</strong>{trade.strategyTag && <small>{trade.strategyTag}</small>}</td>
+              <td><strong>{trade.pair}</strong>{trade.strategyTag && <small>{trade.strategyTag}</small>}{trade.brokerImportId && <small>Eightcap · {trade.sourcePositionId ?? "position"} · {trade.sourceOrderIds.length} orders</small>}</td>
               <td><span className={`side-pill ${trade.side === "BUY" ? "side-buy" : "side-sell"}`}>{trade.side}</span></td>
               <td>{trade.entryPrice} → {trade.exitPrice ?? "Open"}</td>
               <td>{trade.closedAt ? new Date(trade.closedAt).toLocaleString("en-US", { month: "short", day: "numeric" }) : "Open"}</td>
-              <td className={trade.pnl === null ? "muted" : trade.pnl > 0 ? "text-profit" : trade.pnl < 0 ? "text-loss" : ""}>{trade.pnl === null ? "Open" : money(trade.pnl, trade.currency)}</td>
+              <td className={trade.pnl === null ? "muted" : trade.pnl > 0 ? "text-profit" : trade.pnl < 0 ? "text-loss" : ""}>{trade.pnl === null ? "Open" : money(trade.pnl, trade.currency)}{trade.brokerImportId && <small className={trade.reconciliationDifference ? "text-loss" : "muted"}>Δ {trade.reconciliationDifference ?? 0}</small>}</td>
               <td><div className="row-actions"><button onClick={() => editTrade(trade)} aria-label={`Edit ${trade.pair} trade`}>Edit</button><button onClick={() => void deleteTrade(trade)} aria-label={`Delete ${trade.pair} trade`}>Delete</button></div></td>
             </tr>)}</tbody>
           </table></div> : <p className="empty-state">No trades found in this date range.</p>}
@@ -844,6 +805,35 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
           {tradeError && <div className="auth-error trade-form-wide" role="alert">{tradeError}</div>}
           <div className="trade-form-actions trade-form-wide"><button type="button" className="button button-quiet" onClick={() => setTradeDialogOpen(false)}>Cancel</button><button className="button button-primary"><Plus size={15} /> Save trade</button></div>
         </form>
+      </section></div>}
+      {eightcapDialogOpen && <div className="modal-backdrop" role="presentation" onClick={() => { if (!eightcapBusy) setEightcapDialogOpen(false); }}><section className="trade-modal panel trade-form-modal" role="dialog" aria-modal="true" aria-labelledby="eightcap-import-title" onClick={(event) => event.stopPropagation()}>
+        <button className="icon-button modal-close" onClick={() => { if (!eightcapBusy) setEightcapDialogOpen(false); }} aria-label="Close Eightcap import"><X size={18} /></button>
+        <div className="eyebrow">BROKER IMPORT</div><h2 id="eightcap-import-title">Import Eightcap order history</h2>
+        <p className="modal-copy">{eightcapFile?.name} · Preview first, then confirm to save orders.</p>
+        <div className="trade-form">
+          <div style={{ display: "flex", gap: "8px", alignItems: "flex-end" }}>
+            <label style={{ flex: 1 }}>Trading account<select value={eightcapAccountId} onChange={(event) => setEightcapAccountId(event.target.value)} disabled={eightcapBusy}><option value="">Select account</option>{tradingAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} ({account.baseCurrency})</option>)}</select></label>
+            <button type="button" className="button button-quiet" onClick={() => setCreateAccountDialogOpen(true)} disabled={eightcapBusy} style={{ marginBottom: "2px" }}>+ New</button>
+          </div>
+          <label>Source timezone<input value={eightcapTimezone} onChange={(event) => setEightcapTimezone(event.target.value)} placeholder="Asia/Bangkok" disabled={eightcapBusy} /></label>
+          <div className="trade-form-actions trade-form-wide"><button type="button" className="button button-quiet" onClick={() => setEightcapDialogOpen(false)} disabled={eightcapBusy}>Cancel</button><button type="button" className="button button-primary" onClick={() => void previewEightcap()} disabled={eightcapBusy || !eightcapFile || !eightcapAccountId}>{eightcapBusy ? "Working…" : "Preview CSV"}</button></div>
+        </div>
+        {eightcapPreview && <div className="import-preview" aria-live="polite">
+          <p><strong>{eightcapPreview.summary.totalRows}</strong> rows · <strong>{eightcapPreview.summary.filledRows}</strong> filled · {eightcapPreview.summary.cancelledRows} cancelled · {eightcapPreview.summary.rejectedRows} rejected</p>
+          <div className="import-preview-list">{eightcapPreview.positions.map((position) => <article key={position.positionId} className="import-preview-card"><strong>{position.symbol} · {position.direction ?? "Unknown"}</strong><span>{position.entryQty} @ {position.entryPrice ?? "—"} → {position.exitQty} @ {position.exitPrice ?? "Open"}</span><small className={position.status === "needs_review" ? "text-loss" : position.status === "closed" ? "text-profit" : "muted"}>{position.status}{position.issues.length ? ` · ${position.issues.length} issue(s)` : ""}</small></article>)}</div>
+          {eightcapPreview.exceptions.length > 0 && <p className="auth-error">{eightcapPreview.exceptions.length} order(s) need review because they have no Position ID.</p>}
+          <button type="button" className="button button-primary" onClick={() => void confirmEightcap()} disabled={eightcapBusy || !eightcapAccountId}>Confirm and save orders</button>
+        </div>}
+      </section></div>}
+      {createAccountDialogOpen && <div className="modal-backdrop" role="presentation" onClick={() => { if (!createAccountBusy) setCreateAccountDialogOpen(false); }}><section className="trade-modal panel trade-form-modal" role="dialog" aria-modal="true" aria-labelledby="create-account-title" onClick={(event) => event.stopPropagation()}>
+        <button className="icon-button modal-close" onClick={() => { if (!createAccountBusy) setCreateAccountDialogOpen(false); }} aria-label="Close create account"><X size={18} /></button>
+        <div className="eyebrow">TRADING ACCOUNT</div><h2 id="create-account-title">Add trading account</h2>
+        <div className="trade-form">
+          <label>Account name<input maxLength={80} placeholder="e.g., Eightcap Micro" value={createAccountForm.name} onChange={(event) => setCreateAccountForm({ ...createAccountForm, name: event.target.value })} disabled={createAccountBusy} /></label>
+          <label>Base currency<select value={createAccountForm.baseCurrency} onChange={(event) => setCreateAccountForm({ ...createAccountForm, baseCurrency: event.target.value })} disabled={createAccountBusy}>{["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"].map((code) => <option key={code}>{code}</option>)}</select></label>
+          {createAccountError && <div className="auth-error" role="alert">{createAccountError}</div>}
+          <div className="trade-form-actions trade-form-wide"><button type="button" className="button button-quiet" onClick={() => { if (!createAccountBusy) setCreateAccountDialogOpen(false); }} disabled={createAccountBusy}>Cancel</button><button type="button" className="button button-primary" onClick={() => void createAccount()} disabled={createAccountBusy}>{createAccountBusy ? "Creating…" : "Create account"}</button></div>
+        </div>
       </section></div>}
     </main>
   );
