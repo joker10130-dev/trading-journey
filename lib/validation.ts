@@ -26,6 +26,11 @@ export const passwordResetSchema = z.object({
   password: z.string().min(12).max(128),
 });
 
+export const tradingAccountSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  baseCurrency: z.string().trim().regex(/^[A-Za-z]{3}$/).default("USD").transform((value) => value.toUpperCase()),
+});
+
 const tradeBaseSchema = z.object({
   pair: z.string().trim().min(1).max(32).transform((value) => value.toUpperCase()),
   side: z.enum(["BUY", "SELL"]),
@@ -107,3 +112,4 @@ export const dateRangeSchema = z.object({
 
 export type TradeInput = z.infer<typeof tradeSchema>;
 export type JournalInput = z.infer<typeof journalSchema>;
+export type TradingAccountInput = z.infer<typeof tradingAccountSchema>;
