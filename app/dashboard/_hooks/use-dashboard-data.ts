@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { DashboardData, TradeRecord } from "@/app/dashboard/_lib/dashboard-types";
+import { z } from "zod";
+import {
+  dashboardDataSchema,
+  parseApiPayload,
+  tradeRecordSchema,
+  type DashboardData,
+  type TradeRecord,
+} from "@/app/dashboard/_lib/dashboard-types";
 
 type UseDashboardDataOptions = {
   from: string;
@@ -60,8 +67,8 @@ export function useDashboardData({ from, to, currency, query }: UseDashboardData
       const [payload, tradePayload] = await Promise.all([response.json(), tradesResponse.json()]);
       if (!response.ok) throw new Error(payload.error?.message ?? "Could not load analytics.");
       if (!tradesResponse.ok) throw new Error(tradePayload.error?.message ?? "Could not load trades.");
-      setAnalytics(payload as DashboardData);
-      setTradeRecords(tradePayload.trades as TradeRecord[]);
+      setAnalytics(parseApiPayload(dashboardDataSchema, payload, "analytics"));
+      setTradeRecords(parseApiPayload(z.array(tradeRecordSchema), tradePayload.trades, "trades"));
     } catch (error) {
       if (signal.aborted) return;
       setErrorMessage(error instanceof Error ? error.message : "Could not load analytics.");

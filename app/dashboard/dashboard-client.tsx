@@ -39,14 +39,20 @@ import {
   monthStart,
   todayUtc,
 } from "@/app/dashboard/_lib/dashboard-utils";
-import type {
-  CoachingResult,
-  EmotionAnalysis,
-  EightcapPreview,
-  TradeDay,
-  TradeRecord,
-  TradingAccount,
-  UserProfile,
+import { z } from "zod";
+import {
+  coachingResultSchema,
+  eightcapPreviewSchema,
+  emotionAnalysisSchema,
+  parseApiPayload,
+  tradingAccountSchema,
+  type CoachingResult,
+  type EmotionAnalysis,
+  type EightcapPreview,
+  type TradeDay,
+  type TradeRecord,
+  type TradingAccount,
+  type UserProfile,
 } from "@/app/dashboard/_lib/dashboard-types";
 
 const filters = ["This Month", "Last Month", "Last Quarter", "Last Year", "Eternal"];
@@ -125,8 +131,9 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       .then(async (response) => {
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error?.message ?? "Could not load trading accounts.");
-        setTradingAccounts(payload.accounts as TradingAccount[]);
-        setEightcapAccountId((current) => current || payload.accounts[0]?.id || "");
+        const accounts = parseApiPayload(z.array(tradingAccountSchema), payload.accounts, "trading accounts");
+        setTradingAccounts(accounts);
+        setEightcapAccountId((current) => current || accounts[0]?.id || "");
       })
       .catch((error) => setApiErrorMessage(error instanceof Error ? error.message : "Could not load trading accounts."));
   }, [eightcapDialogOpen]);
@@ -306,7 +313,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Could not analyze this reflection.");
-      const analysis = payload.analysis as EmotionAnalysis;
+      const analysis = parseApiPayload(emotionAnalysisSchema, payload.analysis, "emotion analysis");
       setEmotionAnalysis(analysis);
       setReflectionEmotion(String(analysis.composureScore));
     } catch (error) {
@@ -376,7 +383,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Could not generate coaching.");
-      setCoaching(payload as CoachingResult);
+      setCoaching(parseApiPayload(coachingResultSchema, payload, "coaching"));
     } catch (error) {
       setAiError(error instanceof Error ? error.message : "Could not generate coaching.");
     } finally {
@@ -503,8 +510,9 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Could not create account.");
-      setTradingAccounts((current) => [...current, payload.account as TradingAccount]);
-      setEightcapAccountId(payload.account.id as string);
+      const account = parseApiPayload(tradingAccountSchema, payload.account, "trading account");
+      setTradingAccounts((current) => [...current, account]);
+      setEightcapAccountId(account.id);
       setCreateAccountForm({ name: "", baseCurrency: "USD" });
       setCreateAccountDialogOpen(false);
     } catch (error) {
@@ -526,7 +534,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       const response = await fetch("/api/import/eightcap/preview", { method: "POST", body: form });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Could not preview Eightcap CSV.");
-      setEightcapPreview(payload as EightcapPreview);
+      setEightcapPreview(parseApiPayload(eightcapPreviewSchema, payload, "Eightcap preview"));
     } catch (error) {
       setApiErrorMessage(error instanceof Error ? error.message : "Could not preview Eightcap CSV.");
     } finally {
