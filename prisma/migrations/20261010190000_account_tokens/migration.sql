@@ -14,18 +14,9 @@ CREATE TABLE "AccountToken" (
     CONSTRAINT "AccountToken_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "AuthRateLimit" (
-    "keyHash" CHAR(64) NOT NULL,
-    "windowStart" TIMESTAMP(3) NOT NULL,
-    "count" INTEGER NOT NULL DEFAULT 0,
-    "expiresAt" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "AuthRateLimit_pkey" PRIMARY KEY ("keyHash", "windowStart")
-);
-
 CREATE UNIQUE INDEX "AccountToken_tokenHash_key" ON "AccountToken"("tokenHash");
 CREATE INDEX "AccountToken_userId_purpose_idx" ON "AccountToken"("userId", "purpose");
 CREATE INDEX "AccountToken_expiresAt_idx" ON "AccountToken"("expiresAt");
-CREATE INDEX "AuthRateLimit_expiresAt_idx" ON "AuthRateLimit"("expiresAt");
 
 ALTER TABLE "AccountToken"
 ADD CONSTRAINT "AccountToken_userId_fkey"
