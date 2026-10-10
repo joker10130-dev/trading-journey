@@ -139,7 +139,6 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
   }, [eightcapDialogOpen]);
   const calendarDays = useMemo(() => getCalendarDays(year, month), [year, month]);
   const monthName = new Date(year, month).toLocaleString("en-US", { month: "long", year: "numeric" });
-  const dateRange = `${new Date(`${from}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${new Date(`${to}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
   const journalByDate = new Map(analytics.journals.map((journal) => [journal.date, journal]));
   const tradesByDay = new Map<string, TradeDay>();
   for (const day of analytics.daily) {
@@ -175,8 +174,6 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
     pnl: week.pnl,
     trades: week.tradeCount,
   }));
-  const monthRange = dateRange;
-
   const shiftMonth = (amount: number) => {
     const next = new Date(Date.UTC(year, month + amount, 1));
     setMonth(next.getUTCMonth());
@@ -641,7 +638,6 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
           <select className="date-select currency-select" aria-label="P&L currency" value={currency} onChange={(event) => setCurrency(event.target.value)}>
             {["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"].map((code) => <option key={code} value={code}>{code}</option>)}
           </select>
-          <button className="date-select" onClick={() => { const selected = new Date(Date.UTC(year, month, 1)); setFrom(monthStart(selected)); setTo(monthEnd(selected)); setActiveFilter(""); }}><CalendarDays size={15} /> {monthRange} <ChevronDown size={14} /></button>
         </div>
         {apiErrorMessage && <div className="dashboard-alert" role="alert">{apiErrorMessage}<button onClick={() => setApiErrorMessage("")} aria-label="Dismiss error"><X size={15} /></button></div>}
         {importMessage && <div className="dashboard-notice" role="status">{importMessage}<button onClick={() => setImportMessage("")} aria-label="Dismiss import status"><X size={15} /></button></div>}
