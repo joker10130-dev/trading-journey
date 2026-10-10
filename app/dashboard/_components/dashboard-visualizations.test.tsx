@@ -46,7 +46,8 @@ describe("Dashboard visualizations", () => {
   it("shows an empty-state label when there is no equity data", () => {
     const markup = renderToStaticMarkup(createElement(EquityCurve, { dailyData: [] }));
 
-    expect(markup).toContain('aria-label="Equity curve"');
+    expect(markup).toContain('class="equity-empty-state"');
+    expect(markup).toContain('role="img" aria-label="Equity curve"');
     expect(markup).toContain("No trades yet");
   });
 });

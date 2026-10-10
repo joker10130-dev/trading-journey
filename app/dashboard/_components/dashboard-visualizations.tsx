@@ -35,11 +35,7 @@ export function EmotionChart({ values }: { values: number[] }) {
 export function EquityCurve({ dailyData }: { dailyData: { date: string; pnl: number }[] }) {
   const curve = buildEquityCurve(dailyData);
   if (!curve) {
-    return (
-      <svg className="equity-chart" viewBox="0 0 500 200" preserveAspectRatio="none" role="img" aria-label="Equity curve">
-        <text x="250" y="100" textAnchor="middle" fill="#999" fontSize="14">No trades yet</text>
-      </svg>
-    );
+    return <div className="equity-empty-state" role="img" aria-label="Equity curve">No trades yet</div>;
   }
   const curveColor = curve.isNegative ? "#ff5c66" : "#16c98d";
 
