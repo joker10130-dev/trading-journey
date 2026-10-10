@@ -13,6 +13,19 @@ export const loginSchema = z.object({
   password: z.string().min(1).max(128),
 });
 
+export const emailRequestSchema = z.object({
+  email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
+});
+
+export const tokenSchema = z.object({
+  token: z.string().min(32).max(128),
+});
+
+export const passwordResetSchema = z.object({
+  token: z.string().min(32).max(128),
+  password: z.string().min(12).max(128),
+});
+
 const tradeBaseSchema = z.object({
   pair: z.string().trim().min(1).max(32).transform((value) => value.toUpperCase()),
   side: z.enum(["BUY", "SELL"]),
