@@ -10,6 +10,7 @@ datasource db {
 model User {
   id           String           @id @default(cuid())
   email        String           @unique
+  emailVerifiedAt DateTime?
   name         String?
   passwordHash String
   createdAt    DateTime         @default(now())
@@ -17,6 +18,7 @@ model User {
   trades       Trade[]
   journals     TradingJournal[]
   sessions     Session[]
+  accountTokens AccountToken[]
 }
 
 model AuthRateLimit {
@@ -80,6 +82,24 @@ model Session {
 
   @@index([userId, expiresAt])
   @@index([expiresAt])
+}
+
+model AccountToken {
+  id        String             @id @default(cuid())
+  userId    String
+  tokenHash String             @unique @db.Char(64)
+  purpose   AccountTokenPurpose
+  expiresAt DateTime
+  createdAt DateTime           @default(now())
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+}
+
+enum AccountTokenPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
 }
 
 enum TradeSide {

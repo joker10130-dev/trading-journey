@@ -262,10 +262,14 @@ h2 { margin-top: 5px; font: 700 15px Manrope,sans-serif; letter-spacing: -.25px;
 .auth-form input:focus { border-color: #9d86ed; box-shadow: 0 0 0 3px #a58bfa1a; }
 .auth-form small { color: #7f8ba0; font-size: 10px; font-weight: 400; }
 .auth-error { border: 1px solid #6c3845; border-radius: 7px; background: #372631; padding: 9px 10px; color: #ff8a91; font-size: 11px; }
+.auth-info { border: 1px solid #345c50; border-radius: 7px; background: #1e342f; padding: 9px 10px; color: #8ed8b5; font-size: 11px; }
 .auth-submit { min-height: 40px; margin-top: 2px; }
 .auth-submit:disabled { cursor: wait; opacity: .7; }
 .auth-switch { display: flex; justify-content: center; gap: 5px; margin-top: 19px; color: #8e9aaf; font-size: 10px; }
 .auth-switch button { border: 0; background: none; color: #c1adff; font-size: 10px; font-weight: 600; }
+.auth-switch a,.auth-forgot-link,.auth-text-button { color: #c1adff; font-size: 10px; font-weight: 600; text-decoration: none; }
+.auth-forgot-link { display: block; margin-top: 14px; text-align: center; }
+.auth-text-button { justify-self: start; border: 0; background: none; padding: 0; }
 .auth-footnote { color: #68758a; text-align: center; font-size: 10px; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

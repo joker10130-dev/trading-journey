@@ -7,6 +7,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $resolvedInput = (Resolve-Path -LiteralPath $InputPath).Path
+if ((Get-Item -LiteralPath $resolvedInput).Length -eq 0) {
+  throw "Backup file is empty: $resolvedInput"
+}
 $containerId = docker compose ps -q db
 if ($LASTEXITCODE -ne 0 -or -not $containerId) {
   throw "Could not find the running Compose database container."
@@ -18,6 +21,12 @@ if ($PSCmdlet.ShouldProcess("trading_journal database", "Replace database conten
   docker cp $resolvedInput "$($containerId):$containerPath"
   if ($LASTEXITCODE -ne 0) {
     throw "Could not copy the backup into the database container."
+  }
+
+  docker compose exec -T db pg_restore --list $containerPath | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    docker compose exec -T db rm -f $containerPath
+    throw "The backup is not a valid PostgreSQL custom-format archive; the database was not changed."
   }
 
   docker compose exec -T db pg_restore --clean --if-exists --no-owner --no-acl --single-transaction -U trading -d trading_journal $containerPath

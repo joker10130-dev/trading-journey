@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChartNoAxesCombined, LoaderCircle, LogIn } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
@@ -11,11 +12,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState("");
+  const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    setErrorCode("");
+    setInfo("");
     setBusy(true);
     try {
       const response = await fetch(`/api/auth/${mode}`, {
@@ -26,6 +31,13 @@ export default function LoginPage() {
       const payload = await response.json();
       if (!response.ok) {
         setError(payload.error?.message ?? "Could not authenticate. Please try again.");
+        setErrorCode(payload.error?.code ?? "");
+        return;
+      }
+      if (mode === "register") {
+        setPassword("");
+        setInfo(payload.message ?? "Account created. Verify your email before signing in.");
+        setMode("login");
         return;
       }
       router.replace("/dashboard");
@@ -34,6 +46,27 @@ export default function LoginPage() {
       setError("Could not connect to the server. Please try again.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function resendVerification() {
+    setError("");
+    setInfo("");
+    try {
+      const response = await fetch("/api/auth/verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setError(payload.error?.message ?? "Could not request a verification email.");
+        return;
+      }
+      setInfo(payload.message);
+      setErrorCode("");
+    } catch {
+      setError("Could not connect to the server. Please try again.");
     }
   }
 
@@ -54,11 +87,14 @@ export default function LoginPage() {
           <label>Email<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={254} required /></label>
           <label>Password<input type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={(event) => setPassword(event.target.value)} minLength={mode === "register" ? 12 : 1} maxLength={128} required />{mode === "register" && <small>Use at least 12 characters.</small>}</label>
           {error && <div className="auth-error" role="alert">{error}</div>}
+          {info && <div className="auth-info" role="status">{info}</div>}
+          {errorCode === "EMAIL_NOT_VERIFIED" && <button className="auth-text-button" type="button" onClick={() => void resendVerification()}>Resend verification email</button>}
           <button className="button button-primary auth-submit" disabled={busy}>{busy ? <LoaderCircle size={16} className="spin" /> : <LogIn size={16} />}{mode === "login" ? "Sign in" : "Create account"}</button>
         </form>
+        {mode === "login" && <Link className="auth-forgot-link" href="/forgot-password">Forgot password?</Link>}
         <div className="auth-switch">
           {mode === "login" ? "New to Trading Journal?" : "Already have an account?"}
-          <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}>
+          <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); setErrorCode(""); setInfo(""); }}>
             {mode === "login" ? "Create an account" : "Sign in"}
           </button>
         </div>

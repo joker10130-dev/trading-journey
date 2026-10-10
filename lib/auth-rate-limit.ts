@@ -46,6 +46,7 @@ export async function checkAuthRateLimits(request: Request, limits: AuthRateLimi
   const now = new Date();
   if (now.getTime() - lastCleanupAt > 10 * 60_000) {
     await prisma.authRateLimit.deleteMany({ where: { expiresAt: { lte: now } } });
+    await prisma.accountToken.deleteMany({ where: { expiresAt: { lte: now } } });
     lastCleanupAt = now.getTime();
   }
 

@@ -1,9 +1,9 @@
 import { hash } from "bcryptjs";
 import { Prisma } from "@/generated/prisma/client";
 import { NextResponse } from "next/server";
+import { AccountEmailError, getAccountEmailConfig, sendVerificationEmail } from "@/lib/account-email";
 import { authLimitKey, checkAuthRateLimits } from "@/lib/auth-rate-limit";
 import { apiError, hasSameOrigin, parseJson } from "@/lib/api-response";
-import { createSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { registerSchema } from "@/lib/validation";
 
@@ -22,25 +22,30 @@ export async function POST(request: Request) {
   ]);
   if (accountLimit) return accountLimit;
 
+  try {
+    getAccountEmailConfig();
+  } catch (error) {
+    if (error instanceof AccountEmailError) return apiError(error.status, "EMAIL_NOT_CONFIGURED", error.message);
+    throw error;
+  }
+
   const passwordHash = await hash(parsed.data.password, 12);
   try {
     const user = await prisma.user.create({
       data: { email: parsed.data.email, name: parsed.data.name, passwordHash },
       select: { id: true, email: true, name: true },
     });
-    const session = await createSession(user.id);
-    const response = NextResponse.json({ user }, { status: 201 });
-    response.cookies.set("tj_session", session.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      path: "/",
-      expires: session.expiresAt,
-    });
-    return response;
+    await sendVerificationEmail(user);
+    return NextResponse.json({
+      verificationRequired: true,
+      message: "Account created. Check your email for a verification link before signing in.",
+    }, { status: 201 });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return apiError(409, "EMAIL_IN_USE", "An account with this email already exists.");
+    }
+    if (error instanceof AccountEmailError) {
+      return apiError(error.status, "VERIFICATION_EMAIL_FAILED", "Your account was created, but the verification email could not be sent. Request a new verification email and try again.");
     }
     throw error;
   }

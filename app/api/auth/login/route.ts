@@ -23,10 +23,13 @@ export async function POST(request: Request) {
 
   const user = await prisma.user.findUnique({
     where: { email: parsed.data.email },
-    select: { id: true, email: true, name: true, passwordHash: true },
+    select: { id: true, email: true, name: true, passwordHash: true, emailVerifiedAt: true },
   });
   if (!user || !(await compare(parsed.data.password, user.passwordHash))) {
     return apiError(401, "INVALID_CREDENTIALS", "Email or password is incorrect.");
+  }
+  if (!user.emailVerifiedAt) {
+    return apiError(403, "EMAIL_NOT_VERIFIED", "Verify your email before signing in.");
   }
 
   const session = await createSession(user.id);

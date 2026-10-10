@@ -9,6 +9,7 @@ const prismaMocks = vi.hoisted(() => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     authRateLimit: { upsert: prismaMocks.upsert, deleteMany: prismaMocks.cleanup },
+    accountToken: { deleteMany: prismaMocks.cleanup },
   },
 }));
 
