@@ -95,4 +95,21 @@ describe("calculateAnalytics", () => {
     expect(calculateAnalytics(trades, journals).emotionPnlCorrelation).toBe(1);
     expect(calculateAnalytics(trades.slice(0, 2), journals.slice(0, 2)).emotionPnlCorrelation).toBeNull();
   });
+
+  it("includes imported trades in the same realized analytics as manual trades", () => {
+    const imported = {
+      ...trade("imported", 18.25, "2026-03-06T10:00:00.000Z"),
+      strategyTag: "Eightcap import",
+    };
+    const result = calculateAnalytics([trade("manual", 10, "2026-03-06T09:00:00.000Z"), imported], []);
+    expect(result.netPnl).toBe(28.25);
+    expect(result.tradeCount).toBe(2);
+    expect(result.daily).toEqual([{
+      date: "2026-03-06",
+      pnl: 28.25,
+      tradeCount: 2,
+      winningTrades: 2,
+      pairs: ["EURUSD"],
+    }]);
+  });
 });

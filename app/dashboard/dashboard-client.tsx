@@ -36,6 +36,8 @@ type TradeRecord = {
   id: string; pair: string; side: "BUY" | "SELL"; entryPrice: number; exitPrice: number | null;
   stopLoss: number | null; takeProfit: number | null;
   lotSize: number; pnl: number | null; currency: string; strategyTag: string | null;
+  brokerImportId: string | null; sourcePositionId: string | null; sourceOrderIds: string[];
+  brokerNetPnl: number | null; commission: number | null; reconciliationDifference: number | null;
   openedAt: string; closedAt: string | null;
 };
 type DashboardData = {
@@ -678,7 +680,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       const response = await fetch("/api/import/eightcap", { method: "POST", body: form });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Could not import Eightcap CSV.");
-      setImportMessage(`Imported ${payload.importedOrders} broker orders; skipped ${payload.duplicates} duplicates.`);
+      setImportMessage(`Imported ${payload.importedOrders} broker orders and linked ${payload.linkedTrades} trades. Reconciliation: broker ${payload.reconciliation.brokerNetPnl}, app ${payload.reconciliation.importedNetPnl}, commission ${payload.reconciliation.commissionTotal}, difference ${payload.reconciliation.difference}.`);
       setEightcapDialogOpen(false);
       setEightcapFile(null);
       setEightcapPreview(null);
@@ -874,11 +876,11 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
           {tradeRecords.length ? <div className="trade-table-wrap"><table className="trade-table">
             <thead><tr><th>Pair</th><th>Side</th><th>Entry → Exit</th><th>Closed</th><th>P&amp;L</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{tradeRecords.map((trade) => <tr key={trade.id}>
-              <td><strong>{trade.pair}</strong>{trade.strategyTag && <small>{trade.strategyTag}</small>}</td>
+              <td><strong>{trade.pair}</strong>{trade.strategyTag && <small>{trade.strategyTag}</small>}{trade.brokerImportId && <small>Eightcap · {trade.sourcePositionId ?? "position"} · {trade.sourceOrderIds.length} orders</small>}</td>
               <td><span className={`side-pill ${trade.side === "BUY" ? "side-buy" : "side-sell"}`}>{trade.side}</span></td>
               <td>{trade.entryPrice} → {trade.exitPrice ?? "Open"}</td>
               <td>{trade.closedAt ? new Date(trade.closedAt).toLocaleString("en-US", { month: "short", day: "numeric" }) : "Open"}</td>
-              <td className={trade.pnl === null ? "muted" : trade.pnl > 0 ? "text-profit" : trade.pnl < 0 ? "text-loss" : ""}>{trade.pnl === null ? "Open" : money(trade.pnl, trade.currency)}</td>
+              <td className={trade.pnl === null ? "muted" : trade.pnl > 0 ? "text-profit" : trade.pnl < 0 ? "text-loss" : ""}>{trade.pnl === null ? "Open" : money(trade.pnl, trade.currency)}{trade.brokerImportId && <small className={trade.reconciliationDifference ? "text-loss" : "muted"}>Δ {trade.reconciliationDifference ?? 0}</small>}</td>
               <td><div className="row-actions"><button onClick={() => editTrade(trade)} aria-label={`Edit ${trade.pair} trade`}>Edit</button><button onClick={() => void deleteTrade(trade)} aria-label={`Delete ${trade.pair} trade`}>Delete</button></div></td>
             </tr>)}</tbody>
           </table></div> : <p className="empty-state">No trades found in this date range.</p>}

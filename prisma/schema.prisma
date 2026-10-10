@@ -48,16 +48,26 @@ model Trade {
   currency    String    @default("USD") @db.VarChar(3)
   strategyTag String?   @db.VarChar(80)
   externalId  String?   @db.VarChar(160)
+  brokerImportId String?
+  sourcePositionId String? @db.VarChar(160)
+  sourceOrderIds String[] @default([])
+  brokerClosedPnl Decimal? @db.Decimal(18, 2)
+  brokerNetPnl Decimal? @db.Decimal(18, 2)
+  commission Decimal? @db.Decimal(18, 2)
+  reconciliationDifference Decimal? @db.Decimal(18, 2)
   openedAt    DateTime
   closedAt    DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerImport BrokerImport? @relation(fields: [brokerImportId], references: [id], onDelete: SetNull)
 
   @@unique([userId, externalId])
+  @@unique([brokerImportId, sourcePositionId])
   @@index([userId, openedAt])
   @@index([userId, closedAt])
   @@index([userId, pair])
+  @@index([brokerImportId])
 }
 
 model TradingJournal {
@@ -127,6 +137,7 @@ model BrokerImport {
   user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   account         TradingAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   importedOrders  ImportedOrder[]
+  trades          Trade[]
 
   @@index([userId, importedAt])
   @@index([accountId, importedAt])
