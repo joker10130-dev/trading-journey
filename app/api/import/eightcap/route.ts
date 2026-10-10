@@ -53,7 +53,14 @@ export async function POST(request: Request) {
   return NextResponse.json({
     importId: result.importId,
     importedOrders: result.inserted,
+    linkedTrades: result.tradesLinked,
     duplicates: parsed.rows.length - result.inserted,
     summary: parsed.summary,
+    reconciliation: {
+      brokerNetPnl: result.brokerNetPnl,
+      importedNetPnl: result.importedNetPnl,
+      commissionTotal: result.commissionTotal,
+      difference: result.reconciliationDifference,
+    },
   }, { status: 201 });
 }

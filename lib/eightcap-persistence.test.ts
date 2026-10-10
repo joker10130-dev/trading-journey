@@ -68,9 +68,10 @@ describe("persistEightcapImport", () => {
 
   it("persists the import and skips duplicate order IDs", async () => {
     const transaction = {
-      tradingAccount: { findFirst: vi.fn().mockResolvedValue({ id: "account-1" }) },
+      tradingAccount: { findFirst: vi.fn().mockResolvedValue({ id: "account-1", baseCurrency: "USD" }) },
       brokerImport: { create: vi.fn().mockResolvedValue({ id: "import-1" }) },
       importedOrder: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      trade: { upsert: vi.fn().mockResolvedValue({}) },
     };
     prismaMocks.transaction.mockImplementation(async (callback) => callback(transaction));
 
@@ -82,13 +83,20 @@ describe("persistEightcapImport", () => {
       orders: [order, { ...order, rowNumber: 3 }],
     });
 
-    expect(result).toEqual({ importId: "import-1", inserted: 1 });
+    expect(result).toMatchObject({ importId: "import-1", inserted: 1, tradesLinked: 1 });
     expect(transaction.importedOrder.createMany).toHaveBeenCalledWith(expect.objectContaining({
       skipDuplicates: true,
       data: expect.arrayContaining([expect.objectContaining({
         externalOrderId: "1",
         accountId: "account-1",
       })]),
+    }));
+    expect(transaction.trade.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({
+        sourcePositionId: "XAUUSD:1",
+        sourceOrderIds: ["1"],
+        brokerImportId: "import-1",
+      }),
     }));
   });
 });
