@@ -244,6 +244,11 @@ h2 { margin-top: 5px; font: 700 15px Manrope,sans-serif; letter-spacing: -.25px;
 .trade-modal .trade-form-actions { flex-wrap: wrap; }
 .trade-modal .trade-form-actions .button:disabled { cursor: not-allowed; opacity: .55; }
 .trade-form-modal { width: min(100%,520px); max-height: min(90vh,750px); overflow-y: auto; }
+.modal-copy { color: #8e9aaf; font-size: 13px; margin: 8px 0 16px; }
+.import-preview { display: grid; gap: 12px; margin-top: 18px; }
+.import-preview-list { display: grid; gap: 8px; max-height: 230px; overflow-y: auto; }
+.import-preview-card { display: grid; gap: 3px; border: 1px solid #2a3448; border-radius: 10px; padding: 10px 12px; font-size: 12px; }
+.import-preview-card span, .import-preview-card small { color: #8e9aaf; }
 .trade-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-top: 18px; }
 .trade-form label { display: grid; gap: 6px; color: #aeb9ca; font-size: 10px; font-weight: 600; }
 .trade-form input,.trade-form select { min-width: 0; height: 36px; border: 1px solid #354055; border-radius: 6px; outline: 0; background: #121925; padding: 0 9px; color: var(--text); color-scheme: dark; font-size: 11px; }
