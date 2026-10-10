@@ -19,6 +19,16 @@ model User {
   sessions     Session[]
 }
 
+model AuthRateLimit {
+  keyHash     String   @db.Char(64)
+  windowStart DateTime
+  count       Int      @default(0)
+  expiresAt   DateTime
+
+  @@id([keyHash, windowStart])
+  @@index([expiresAt])
+}
+
 model Trade {
   id          String    @id @default(cuid())
   userId      String
