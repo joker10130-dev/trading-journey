@@ -74,6 +74,8 @@ npm audit --audit-level=high
 - Keep changes small and aligned with the existing patterns in the nearest feature area (`app/api`, `lib`, or `prisma`).
 - Prefer extending `lib/validation.ts` and existing route handlers instead of introducing a parallel validation system.
 - When you touch analytics or trade data, continue to use the repo's existing DTOs and calculations in `lib/analytics.ts` so dashboard behavior stays consistent.
+- For UI changes, identify the existing control that owns the behavior before adding another one. If the intended interaction or overlap with an existing control is unclear, state the assumption and resolve it before building a new interaction. Include populated and empty states in the acceptance criteria. For interactive UI work, verify the actual browser interaction when Computer Use is available, without submitting or changing real user data.
+- For Copilot CLI TypeScript code intelligence, the repository LSP mapping is in `.github/lsp.json`; install `typescript-language-server` locally or globally, then run `/lsp reload` and `/lsp test typescript`.
 - If you add or change a database model, update the Prisma schema and evaluate the migration workflow (`npm run db:migrate` for local dev, `npm run db:deploy` for committed environments).
 
 ## Local environment notes

@@ -8,7 +8,6 @@ import {
   ArrowUpRight,
   CalendarDays,
   ChartNoAxesCombined,
-  ChevronDown,
   Flame,
   LayoutDashboard,
   LogOut,
@@ -596,7 +595,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
           <a className="nav-link active" href="#dashboard"><LayoutDashboard size={18} />Dashboard</a>
           <a className="nav-link" href="#calendar"><CalendarDays size={18} />Calendar</a>
           <a className="nav-link" href="#performance"><TrendingUp size={18} />Performance</a>
-          <a className="nav-link" href="#journal"><Sparkles size={18} />Journal <span className="nav-pill">Soon</span></a>
+          <a className="nav-link" href="#journal"><Sparkles size={18} />Journal</a>
         </nav>
         <div className="sidebar-bottom">
           <div className="plan-card">
@@ -729,7 +728,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
 
           <aside className="right-column">
             <section className="weekly-panel panel">
-              <div className="panel-header weekly-heading"><div><div className="eyebrow">PERIOD SUMMARY</div><h2>Weekly breakdown</h2></div><button className="icon-button" aria-label="More weekly options"><ChevronDown size={17} /></button></div>
+              <div className="panel-header weekly-heading"><div><div className="eyebrow">PERIOD SUMMARY</div><h2>Weekly breakdown</h2></div></div>
               <div className="week-list">
                 {weeklySummary.map((week) => <article className={`week-card ${week.pnl < 0 ? "week-loss" : ""}`} key={week.label}>
                   <div className="week-card-heading"><strong>{week.label}</strong><span>{week.range}</span></div>
@@ -738,7 +737,6 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
                 </article>)}
               </div>
               {!weeklySummary.length && <p className="empty-state compact">No closed trades in this range.</p>}
-              <button className="text-link">View all analytics <ArrowRight size={14} /></button>
             </section>
             <section className="insight-card">
               <div className="insight-heading"><div className="insight-icon"><Sparkles size={16} /></div><span>PERFORMANCE NOTE</span><span className="beta-tag">STATS</span></div>
