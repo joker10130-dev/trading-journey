@@ -97,6 +97,7 @@ h1 span { color: #b59aff; font-size: 17px; }
 .emotion-card .metric-copy { align-self: stretch; }
 .emotion-visual { width: 47%; align-self: flex-end; }
 .emotion-chart { display: block; width: 100%; height: 57px; }
+.equity-chart { display: block; width: 100%; height: 160px; }
 .chart-caption { display: flex; justify-content: space-between; margin-top: 2px; color: #66748b; font-size: 8px; }
 .donut-wrap { display: grid; width: 59px; height: 59px; flex: 0 0 auto; place-items: center; margin: 0 4px; }
 .donut { display: grid; width: 54px; height: 54px; place-items: center; border-radius: 50%; background: conic-gradient(#ffc28e 0 34%,#a58bfa 34% 78%,#32394a 78% 100%); transform: rotate(-35deg); }

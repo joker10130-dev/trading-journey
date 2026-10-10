@@ -27,6 +27,10 @@ function addMoney(left: string, right: string) {
   return fromCents(toCents(left) + toCents(right));
 }
 
+function negateMoney(value: string) {
+  return value.startsWith("-") ? value.slice(1) : `-${value}`;
+}
+
 function sumMoney(values: Array<string | null>): string {
   let total = "0.00";
   for (const value of values) {
@@ -158,9 +162,9 @@ export async function persistEightcapImport(input: PersistEightcapImportInput) {
       brokerNetPnl,
       importedNetPnl,
       commissionTotal: sumMoney(reconstructed.positions.map((position) => position.commission)),
-      reconciliationDifference: addMoney(importedNetPnl, `-${brokerNetPnl}`),
+      reconciliationDifference: addMoney(importedNetPnl, negateMoney(brokerNetPnl)),
     };
-  });
+  }, { maxWait: 10_000, timeout: 60_000 });
 
   return result;
 }

@@ -143,6 +143,46 @@ function EmotionChart({ values }: { values: number[] }) {
   );
 }
 
+function EquityCurve({ dailyData }: { dailyData: { date: string; pnl: number }[] }) {
+  if (!dailyData.length) {
+    return (
+      <svg className="equity-chart" viewBox="0 0 500 200" preserveAspectRatio="none" role="img" aria-label="Equity curve">
+        <text x="250" y="100" textAnchor="middle" fill="#999" fontSize="14">No trades yet</text>
+      </svg>
+    );
+  }
+  const accumulated = dailyData.reduce((acc, day, index) => {
+    const prevEquity = index > 0 ? acc[index - 1].equity : 0;
+    return [...acc, { date: day.date, equity: prevEquity + day.pnl, pnl: day.pnl }];
+  }, [] as { date: string; equity: number; pnl: number }[]);
+
+  const minEquity = Math.min(...accumulated.map((d) => d.equity), 0);
+  const maxEquity = Math.max(...accumulated.map((d) => d.equity), 0);
+  const range = Math.max(maxEquity - minEquity, 1);
+
+  const points = accumulated.map((day, index) => {
+    const x = (index / Math.max(accumulated.length - 1, 1)) * 500;
+    const y = 150 - ((day.equity - minEquity) / range) * 140;
+    return `${x},${y}`;
+  }).join(" ");
+
+  const zeroLine = minEquity < 0 ? ((0 - minEquity) / range) * 140 : 150;
+
+  return (
+    <svg className="equity-chart" viewBox="0 0 500 200" preserveAspectRatio="none" role="img" aria-label="Equity curve over time">
+      <defs>
+        <linearGradient id="equity-fill" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor="#16c98d" stopOpacity=".2" />
+          <stop offset="100%" stopColor="#16c98d" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {minEquity < 0 && <line x1="0" y1={zeroLine} x2="500" y2={zeroLine} stroke="#666" strokeWidth="1" strokeDasharray="4,4" />}
+      <polygon points={`0,150 ${points} 500,150`} fill="url(#equity-fill)" />
+      <polyline points={points} fill="none" stroke="#16c98d" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function MetricCard({
   title, value, subtitle, icon: Icon, color, children,
 }: {
@@ -243,6 +283,10 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
     closedAt: `${todayUtc()}T10:00`, strategyTag: "",
   });
   const [journalEmotion, setJournalEmotion] = useState("");
+  const [createAccountDialogOpen, setCreateAccountDialogOpen] = useState(false);
+  const [createAccountForm, setCreateAccountForm] = useState({ name: "", baseCurrency: "USD" });
+  const [createAccountBusy, setCreateAccountBusy] = useState(false);
+  const [createAccountError, setCreateAccountError] = useState("");
   useEffect(() => () => speechRecognitionRef.current?.stop(), []);
   useEffect(() => {
     if (!eightcapDialogOpen) return;
@@ -648,6 +692,32 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
     }
   };
 
+  const createAccount = async () => {
+    if (!createAccountForm.name.trim()) {
+      setCreateAccountError("Account name is required.");
+      return;
+    }
+    setCreateAccountBusy(true);
+    setCreateAccountError("");
+    try {
+      const response = await fetch("/api/trading-accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createAccountForm),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Could not create account.");
+      setTradingAccounts((current) => [...current, payload.account as TradingAccount]);
+      setEightcapAccountId(payload.account.id as string);
+      setCreateAccountForm({ name: "", baseCurrency: "USD" });
+      setCreateAccountDialogOpen(false);
+    } catch (error) {
+      setCreateAccountError(error instanceof Error ? error.message : "Could not create account.");
+    } finally {
+      setCreateAccountBusy(false);
+    }
+  };
+
   const previewEightcap = async () => {
     if (!eightcapFile || !eightcapTimezone.trim()) return;
     setEightcapBusy(true);
@@ -771,6 +841,13 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
         </div>
         {apiErrorMessage && <div className="dashboard-alert" role="alert">{apiErrorMessage}<button onClick={() => setApiErrorMessage("")} aria-label="Dismiss error"><X size={15} /></button></div>}
         {importMessage && <div className="dashboard-notice" role="status">{importMessage}<button onClick={() => setImportMessage("")} aria-label="Dismiss import status"><X size={15} /></button></div>}
+
+        <section className="panel" style={{ marginTop: "17px", padding: "20px" }}>
+          <div className="panel-header">
+            <div><div className="eyebrow">EQUITY TRACKING</div><h2>Account equity curve</h2></div>
+          </div>
+          <EquityCurve dailyData={analytics.daily} />
+        </section>
 
         <section className="metrics-grid" id="performance" aria-label="Trading performance" aria-busy={loading}>
           <MetricCard title="Net P&L" value={money(analytics.netPnl, analytics.currency)} subtitle={<span className={analytics.netPnl >= 0 ? "text-profit" : "text-loss"}>{analytics.netPnl >= 0 ? "↗ Realized profit" : "↘ Realized loss"}</span>} icon={TrendingUp} color="#16c98d">
@@ -934,7 +1011,10 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
         <div className="eyebrow">BROKER IMPORT</div><h2 id="eightcap-import-title">Import Eightcap order history</h2>
         <p className="modal-copy">{eightcapFile?.name} · Preview first, then confirm to save orders.</p>
         <div className="trade-form">
-          <label>Trading account<select value={eightcapAccountId} onChange={(event) => setEightcapAccountId(event.target.value)} disabled={eightcapBusy}><option value="">Select account</option>{tradingAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} ({account.baseCurrency})</option>)}</select></label>
+          <div style={{ display: "flex", gap: "8px", alignItems: "flex-end" }}>
+            <label style={{ flex: 1 }}>Trading account<select value={eightcapAccountId} onChange={(event) => setEightcapAccountId(event.target.value)} disabled={eightcapBusy}><option value="">Select account</option>{tradingAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} ({account.baseCurrency})</option>)}</select></label>
+            <button type="button" className="button button-quiet" onClick={() => setCreateAccountDialogOpen(true)} disabled={eightcapBusy} style={{ marginBottom: "2px" }}>+ New</button>
+          </div>
           <label>Source timezone<input value={eightcapTimezone} onChange={(event) => setEightcapTimezone(event.target.value)} placeholder="Asia/Bangkok" disabled={eightcapBusy} /></label>
           <div className="trade-form-actions trade-form-wide"><button type="button" className="button button-quiet" onClick={() => setEightcapDialogOpen(false)} disabled={eightcapBusy}>Cancel</button><button type="button" className="button button-primary" onClick={() => void previewEightcap()} disabled={eightcapBusy || !eightcapFile || !eightcapAccountId}>{eightcapBusy ? "Working…" : "Preview CSV"}</button></div>
         </div>
@@ -944,6 +1024,16 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
           {eightcapPreview.exceptions.length > 0 && <p className="auth-error">{eightcapPreview.exceptions.length} order(s) need review because they have no Position ID.</p>}
           <button type="button" className="button button-primary" onClick={() => void confirmEightcap()} disabled={eightcapBusy || !eightcapAccountId}>Confirm and save orders</button>
         </div>}
+      </section></div>}
+      {createAccountDialogOpen && <div className="modal-backdrop" role="presentation" onClick={() => { if (!createAccountBusy) setCreateAccountDialogOpen(false); }}><section className="trade-modal panel trade-form-modal" role="dialog" aria-modal="true" aria-labelledby="create-account-title" onClick={(event) => event.stopPropagation()}>
+        <button className="icon-button modal-close" onClick={() => { if (!createAccountBusy) setCreateAccountDialogOpen(false); }} aria-label="Close create account"><X size={18} /></button>
+        <div className="eyebrow">TRADING ACCOUNT</div><h2 id="create-account-title">Add trading account</h2>
+        <div className="trade-form">
+          <label>Account name<input maxLength={80} placeholder="e.g., Eightcap Micro" value={createAccountForm.name} onChange={(event) => setCreateAccountForm({ ...createAccountForm, name: event.target.value })} disabled={createAccountBusy} /></label>
+          <label>Base currency<select value={createAccountForm.baseCurrency} onChange={(event) => setCreateAccountForm({ ...createAccountForm, baseCurrency: event.target.value })} disabled={createAccountBusy}>{["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"].map((code) => <option key={code}>{code}</option>)}</select></label>
+          {createAccountError && <div className="auth-error" role="alert">{createAccountError}</div>}
+          <div className="trade-form-actions trade-form-wide"><button type="button" className="button button-quiet" onClick={() => { if (!createAccountBusy) setCreateAccountDialogOpen(false); }} disabled={createAccountBusy}>Cancel</button><button type="button" className="button button-primary" onClick={() => void createAccount()} disabled={createAccountBusy}>{createAccountBusy ? "Creating…" : "Create account"}</button></div>
+        </div>
       </section></div>}
     </main>
   );
