@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { CsvImportError, parseTradeCsv } from "@/lib/csv-import";
+import { CsvImportError, isEightcapOrderHistoryCsv, parseTradeCsv } from "@/lib/csv-import";
 
 describe("parseTradeCsv", () => {
+  it("detects TradingView/Eightcap order-history exports", () => {
+    expect(isEightcapOrderHistoryCsv("Symbol,Side,Type,Qty,Filled Qty,Update Time,Position ID,Order ID\nXAUUSD,Buy,Market,1,1,,,,")).toBe(true);
+    expect(isEightcapOrderHistoryCsv("pair,side,entryPrice,lotSize,openedAt\nEURUSD,BUY,1.08,1,2026-03-02T09:00:00Z")).toBe(false);
+  });
+
   it("parses quoted fields and normalizes trade data", () => {
     const rows = parseTradeCsv([
       "Ticket,Pair,Side,Entry Price,Exit Price,Stop Loss,Take Profit,Lot Size,P&L,Currency,Strategy Tag,Opened At,Closed At",

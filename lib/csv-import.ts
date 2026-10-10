@@ -5,6 +5,7 @@ import { tradeSchema, type TradeInput } from "@/lib/validation";
 const maxCsvBytes = 2 * 1024 * 1024;
 const maxCsvRows = 5000;
 const requiredHeaders = ["pair", "side", "entryprice", "lotsize", "openedat"];
+const eightcapHeaders = ["symbol", "side", "type", "qty", "filledqty", "updatetime", "positionid", "orderid"];
 
 export type CsvImportRow = TradeInput & { externalId: string };
 
@@ -89,4 +90,10 @@ export function parseTradeCsv(text: string): CsvImportRow[] {
 
 export function getMaxCsvBytes() {
   return maxCsvBytes;
+}
+
+export function isEightcapOrderHistoryCsv(text: string) {
+  const header = text.replace(/^\uFEFF/, "").split(/\r?\n/, 1)[0] ?? "";
+  const normalizedHeaders = new Set(header.split(",").map((value) => value.trim().toLowerCase().replace(/[^a-z0-9]/g, "")));
+  return eightcapHeaders.every((value) => normalizedHeaders.has(value));
 }
