@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { buildEquityCurve } from "@/lib/equity-curve";
 
 const filters = ["This Month", "Last Month", "Last Quarter", "Last Year", "Eternal"];
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -144,41 +145,27 @@ function EmotionChart({ values }: { values: number[] }) {
 }
 
 function EquityCurve({ dailyData }: { dailyData: { date: string; pnl: number }[] }) {
-  if (!dailyData.length) {
+  const curve = buildEquityCurve(dailyData);
+  if (!curve) {
     return (
       <svg className="equity-chart" viewBox="0 0 500 200" preserveAspectRatio="none" role="img" aria-label="Equity curve">
         <text x="250" y="100" textAnchor="middle" fill="#999" fontSize="14">No trades yet</text>
       </svg>
     );
   }
-  const accumulated = dailyData.reduce((acc, day, index) => {
-    const prevEquity = index > 0 ? acc[index - 1].equity : 0;
-    return [...acc, { date: day.date, equity: prevEquity + day.pnl, pnl: day.pnl }];
-  }, [] as { date: string; equity: number; pnl: number }[]);
-
-  const minEquity = Math.min(...accumulated.map((d) => d.equity), 0);
-  const maxEquity = Math.max(...accumulated.map((d) => d.equity), 0);
-  const range = Math.max(maxEquity - minEquity, 1);
-
-  const points = accumulated.map((day, index) => {
-    const x = (index / Math.max(accumulated.length - 1, 1)) * 500;
-    const y = 150 - ((day.equity - minEquity) / range) * 140;
-    return `${x},${y}`;
-  }).join(" ");
-
-  const zeroLine = minEquity < 0 ? ((0 - minEquity) / range) * 140 : 150;
+  const curveColor = curve.isNegative ? "#ff5c66" : "#16c98d";
 
   return (
     <svg className="equity-chart" viewBox="0 0 500 200" preserveAspectRatio="none" role="img" aria-label="Equity curve over time">
       <defs>
         <linearGradient id="equity-fill" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#16c98d" stopOpacity=".2" />
-          <stop offset="100%" stopColor="#16c98d" stopOpacity="0" />
+          <stop offset="0%" stopColor={curveColor} stopOpacity=".2" />
+          <stop offset="100%" stopColor={curveColor} stopOpacity="0" />
         </linearGradient>
       </defs>
-      {minEquity < 0 && <line x1="0" y1={zeroLine} x2="500" y2={zeroLine} stroke="#666" strokeWidth="1" strokeDasharray="4,4" />}
-      <polygon points={`0,150 ${points} 500,150`} fill="url(#equity-fill)" />
-      <polyline points={points} fill="none" stroke="#16c98d" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <line x1="0" y1={curve.zeroY} x2="500" y2={curve.zeroY} stroke="#666" strokeWidth="1" strokeDasharray="4,4" />
+      <polygon points={curve.areaPoints} fill="url(#equity-fill)" />
+      <polyline points={curve.points} fill="none" stroke={curveColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
