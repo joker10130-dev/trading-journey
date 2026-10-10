@@ -1,7 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownRight,
   ArrowLeft,
@@ -25,74 +24,33 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { buildEquityCurve } from "@/lib/equity-curve";
+import { useDashboardData } from "@/app/dashboard/_hooks/use-dashboard-data";
+import {
+  DayCell,
+  EmotionChart,
+  EquityCurve,
+  MetricCard,
+  Sparkline,
+} from "@/app/dashboard/_components/dashboard-visualizations";
+import {
+  getCalendarDays,
+  money,
+  monthEnd,
+  monthStart,
+  todayUtc,
+} from "@/app/dashboard/_lib/dashboard-utils";
+import type {
+  CoachingResult,
+  EmotionAnalysis,
+  EightcapPreview,
+  TradeDay,
+  TradeRecord,
+  TradingAccount,
+  UserProfile,
+} from "@/app/dashboard/_lib/dashboard-types";
 
 const filters = ["This Month", "Last Month", "Last Quarter", "Last Year", "Eternal"];
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const money = (value: number, currency = "USD") =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
-
-type TradeDay = { date: string; day: number; pnl: number; trades: number; winningTrades: number; pairs: string[]; note: string; journalId?: string; emotionScore: number | null };
-type TradeRecord = {
-  id: string; pair: string; side: "BUY" | "SELL"; entryPrice: number; exitPrice: number | null;
-  stopLoss: number | null; takeProfit: number | null;
-  lotSize: number; pnl: number | null; currency: string; strategyTag: string | null;
-  brokerImportId: string | null; sourcePositionId: string | null; sourceOrderIds: string[];
-  brokerNetPnl: number | null; commission: number | null; reconciliationDifference: number | null;
-  openedAt: string; closedAt: string | null;
-};
-type DashboardData = {
-  currency: string;
-  netPnl: number;
-  grossProfit: number;
-  grossLoss: number;
-  tradeCount: number;
-  winningTrades: number;
-  losingTrades: number;
-  breakevenTrades: number;
-  winRate: number;
-  rewardRiskRatio: number | null;
-  maxDrawdown: number;
-  emotionPnlCorrelation: number | null;
-  tradingDays: number;
-  currentWinningStreak: number;
-  longestWinningStreak: number;
-  daily: { date: string; pnl: number; tradeCount: number; winningTrades: number; pairs: string[] }[];
-  weekly: { weekStart: string; weekEnd: string; pnl: number; tradeCount: number }[];
-  journals: { id: string; date: string; notes: string; emotionScore: number | null }[];
-};
-
-type UserProfile = { id: string; email: string; name: string | null };
-type TradingAccount = { id: string; name: string; baseCurrency: string };
-type EightcapPreview = {
-  filename: string;
-  timezone: string;
-  summary: { totalRows: number; filledRows: number; cancelledRows: number; rejectedRows: number; errorRows: number };
-  positions: {
-    positionId: string; symbol: string; direction: "LONG" | "SHORT" | null; entryQty: string;
-    entryPrice: string | null; exitQty: string; exitPrice: string | null; netClosedPnl: string | null;
-    status: "open" | "closed" | "needs_review"; issues: { message: string; rowNumbers: number[] }[];
-  }[];
-  exceptions: { rowNumber: number; message: string }[];
-};
-type EmotionAnalysis = {
-  sentiment: "positive" | "neutral" | "negative" | "mixed";
-  composureScore: number;
-  summary: string;
-  cues: string[];
-  reflectionQuestion: string;
-};
-type CoachingResult = {
-  coaching: {
-    summary: string;
-    patterns: { observation: string; evidenceIds: string[]; confidence: "low" | "medium" | "high" }[];
-    reflectionQuestion: string;
-  };
-  evidence: { id: string; type: string; pair?: string; side?: string; strategy?: string | null; pnl?: number; closedAt?: string; weekday?: string; date?: string; emotionScore?: number | null; note?: string }[];
-  tradeCount: number;
-  journalCount: number;
-  periodDays: number;
-};
 
 type BrowserRecognition = {
   lang: string;
@@ -105,123 +63,6 @@ type BrowserRecognition = {
 };
 type BrowserRecognitionConstructor = new () => BrowserRecognition;
 
-const todayUtc = () => new Date().toISOString().slice(0, 10);
-const monthStart = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)).toISOString().slice(0, 10);
-const monthEnd = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
-const emptyAnalytics = (currency = "USD"): DashboardData => ({
-  currency, netPnl: 0, grossProfit: 0, grossLoss: 0, tradeCount: 0, winningTrades: 0,
-  losingTrades: 0, breakevenTrades: 0, winRate: 0, rewardRiskRatio: null, maxDrawdown: 0,
-  emotionPnlCorrelation: null,
-  tradingDays: 0, currentWinningStreak: 0, longestWinningStreak: 0,
-  daily: [], weekly: [], journals: [],
-});
-
-function Sparkline({ values, color }: { values: number[]; color: string }) {
-  const points = values.map((value, index) => `${(index / (values.length - 1)) * 100},${34 - value * 0.38}`).join(" ");
-  return (
-    <svg className="sparkline" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
-      <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function EmotionChart({ values }: { values: number[] }) {
-  const safeValues = values.length ? values : [0, 0];
-  const min = Math.min(...safeValues, 0);
-  const max = Math.max(...safeValues, 100);
-  const points = safeValues.map((value, index) => `${(index / Math.max(safeValues.length - 1, 1)) * 300},${68 - ((value - min) / Math.max(max - min, 1)) * 58}`).join(" ");
-  return (
-    <svg className="emotion-chart" viewBox="0 0 300 72" preserveAspectRatio="none" role="img" aria-label="Emotion trend over the last 24 sessions">
-      <defs>
-        <linearGradient id="emotion-fill" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#a58bfa" stopOpacity=".25" />
-          <stop offset="100%" stopColor="#a58bfa" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polygon points={`0,72 ${points} 300,72`} fill="url(#emotion-fill)" />
-      <polyline points={points} fill="none" stroke="#a58bfa" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function EquityCurve({ dailyData }: { dailyData: { date: string; pnl: number }[] }) {
-  const curve = buildEquityCurve(dailyData);
-  if (!curve) {
-    return (
-      <svg className="equity-chart" viewBox="0 0 500 200" preserveAspectRatio="none" role="img" aria-label="Equity curve">
-        <text x="250" y="100" textAnchor="middle" fill="#999" fontSize="14">No trades yet</text>
-      </svg>
-    );
-  }
-  const curveColor = curve.isNegative ? "#ff5c66" : "#16c98d";
-
-  return (
-    <svg className="equity-chart" viewBox="0 0 500 200" preserveAspectRatio="none" role="img" aria-label="Equity curve over time">
-      <defs>
-        <linearGradient id="equity-fill" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={curveColor} stopOpacity=".2" />
-          <stop offset="100%" stopColor={curveColor} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <line x1="0" y1={curve.zeroY} x2="500" y2={curve.zeroY} stroke="#666" strokeWidth="1" strokeDasharray="4,4" />
-      <polygon points={curve.areaPoints} fill="url(#equity-fill)" />
-      <polyline points={curve.points} fill="none" stroke={curveColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function MetricCard({
-  title, value, subtitle, icon: Icon, color, children,
-}: {
-  title: string; value: string; subtitle: ReactNode; icon: typeof TrendingUp; color: string; children: ReactNode;
-}) {
-  return (
-    <article className="metric-card">
-      <div className="metric-copy">
-        <div className="metric-title">{title}<Icon size={16} color={color} strokeWidth={2.3} /></div>
-        <div className="metric-value">{value}</div>
-        <div className="metric-subtitle">{subtitle}</div>
-      </div>
-      <div className="metric-visual">{children}</div>
-    </article>
-  );
-}
-
-function DayCell({ day, currentMonth, trade, currency, onSelect }: {
-  day: number; currentMonth: boolean; trade?: TradeDay; currency: string; onSelect: (trade: TradeDay) => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={`day-cell ${!currentMonth ? "outside-month" : ""} ${trade ? trade.pnl > 0 ? "positive" : trade.pnl < 0 ? "negative" : "flat" : ""}`}
-      onClick={() => trade && onSelect(trade)}
-      disabled={!trade}
-      aria-label={trade ? `${day}, ${money(trade.pnl, currency)}, ${trade.trades} trades` : `${day}`}
-    >
-      <span className="day-number">{day}</span>
-      {trade && (
-        <span className="day-trade">
-          <strong>{trade.pnl > 0 ? "+" : trade.pnl < 0 ? "-" : ""}{money(Math.abs(trade.pnl), currency)}</strong>
-          <small>{trade.trades} {trade.trades === 1 ? "trade" : "trades"}</small>
-        </span>
-      )}
-    </button>
-  );
-}
-
-function getCalendarDays(year: number, month: number) {
-  const firstWeekday = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const daysInPreviousMonth = new Date(year, month, 0).getDate();
-  const totalCells = Math.ceil((firstWeekday + daysInMonth) / 7) * 7;
-  return Array.from({ length: totalCells }, (_, index) => {
-    const date = index - firstWeekday + 1;
-    if (date < 1) return { day: daysInPreviousMonth + date, currentMonth: false };
-    if (date > daysInMonth) return { day: date - daysInMonth, currentMonth: false };
-    return { day: date, currentMonth: true };
-  });
-}
-
 export default function DashboardClient({ user }: { user: UserProfile }) {
   const router = useRouter();
   const initialDate = new Date();
@@ -232,6 +73,14 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
   const [currency, setCurrency] = useState("USD");
   const [activeFilter, setActiveFilter] = useState("This Month");
   const [query, setQuery] = useState("");
+  const {
+    analytics,
+    tradeRecords,
+    loading,
+    errorMessage: apiErrorMessage,
+    setErrorMessage: setApiErrorMessage,
+    refresh,
+  } = useDashboardData({ from, to, currency, query });
   const [selectedTrade, setSelectedTrade] = useState<TradeDay | null>(null);
   const [reflectionDraft, setReflectionDraft] = useState("");
   const [reflectionEmotion, setReflectionEmotion] = useState("");
@@ -240,10 +89,6 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [quickNote, setQuickNote] = useState("");
   const [savedNote, setSavedNote] = useState("");
-  const [analytics, setAnalytics] = useState<DashboardData>(emptyAnalytics());
-  const [loading, setLoading] = useState(true);
-  const [apiErrorMessage, setApiErrorMessage] = useState("");
-  const [requestVersion, setRequestVersion] = useState(0);
   const [tradeDialogOpen, setTradeDialogOpen] = useState(false);
   const [tradeError, setTradeError] = useState("");
   const [aiError, setAiError] = useState("");
@@ -254,7 +99,6 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
   const [isListening, setIsListening] = useState(false);
   const speechRecognitionRef = useRef<BrowserRecognition | null>(null);
   const [editingTradeId, setEditingTradeId] = useState<string | null>(null);
-  const [tradeRecords, setTradeRecords] = useState<TradeRecord[]>([]);
   const [importMessage, setImportMessage] = useState("");
   const [tradingAccounts, setTradingAccounts] = useState<TradingAccount[]>([]);
   const [eightcapDialogOpen, setEightcapDialogOpen] = useState(false);
@@ -326,41 +170,6 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
   }));
   const monthRange = dateRange;
 
-  const loadAnalytics = useCallback(async (signal: AbortSignal) => {
-    setLoading(true);
-    setApiErrorMessage("");
-    try {
-      const params = new URLSearchParams({ from, to, currency, q: query });
-      const [response, tradesResponse] = await Promise.all([
-        fetch(`/api/analytics?${params}`, { cache: "no-store", signal }),
-        fetch(`/api/trades?${params}&limit=100`, { cache: "no-store", signal }),
-      ]);
-      if (response.status === 401 || tradesResponse.status === 401) {
-        router.replace("/login");
-        return;
-      }
-      const [payload, tradePayload] = await Promise.all([response.json(), tradesResponse.json()]);
-      if (!response.ok) throw new Error(payload.error?.message ?? "Could not load analytics.");
-      if (!tradesResponse.ok) throw new Error(tradePayload.error?.message ?? "Could not load trades.");
-      setAnalytics(payload as DashboardData);
-      setTradeRecords(tradePayload.trades as TradeRecord[]);
-    } catch (error) {
-      if (signal.aborted) return;
-      setApiErrorMessage(error instanceof Error ? error.message : "Could not load analytics.");
-    } finally {
-      if (!signal.aborted) setLoading(false);
-    }
-  }, [currency, from, query, router, to]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => void loadAnalytics(controller.signal), 180);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [loadAnalytics, requestVersion]);
-
   const shiftMonth = (amount: number) => {
     const next = new Date(Date.UTC(year, month + amount, 1));
     setMonth(next.getUTCMonth());
@@ -424,7 +233,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       setTradeDialogOpen(false);
       setEditingTradeId(null);
       setTradeForm({ pair: "", side: "BUY", entryPrice: "", exitPrice: "", stopLoss: "", takeProfit: "", lotSize: "", pnl: "", currency, openedAt: `${todayUtc()}T09:00`, closedAt: `${todayUtc()}T10:00`, strategyTag: "" });
-      setRequestVersion((version) => version + 1);
+      refresh();
     } catch (error) {
       setTradeError(error instanceof Error ? error.message : "Could not save this trade.");
     }
@@ -457,7 +266,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       const response = await fetch(`/api/trades/${trade.id}`, { method: "DELETE" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Could not delete trade.");
-      setRequestVersion((version) => version + 1);
+      refresh();
     } catch (error) {
       setApiErrorMessage(error instanceof Error ? error.message : "Could not delete trade.");
     }
@@ -478,7 +287,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Could not save reflection.");
       setSelectedTrade(null);
-      setRequestVersion((version) => version + 1);
+      refresh();
     } catch (error) {
       setApiErrorMessage(error instanceof Error ? error.message : "Could not save reflection.");
     }
@@ -621,7 +430,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error?.message ?? "Could not delete reflection.");
       setSelectedTrade(null);
-      setRequestVersion((version) => version + 1);
+      refresh();
     } catch (error) {
       setApiErrorMessage(error instanceof Error ? error.message : "Could not delete reflection.");
     }
@@ -646,7 +455,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       setQuickNote("");
       setJournalEmotion("");
       setSavedNote(notes);
-      setRequestVersion((version) => version + 1);
+      refresh();
     } catch (error) {
       setApiErrorMessage(error instanceof Error ? error.message : "Could not save the journal entry.");
     }
@@ -673,7 +482,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
         return;
       }
       setImportMessage(`Imported ${payload.imported} trades; skipped ${payload.duplicates} duplicates.`);
-      setRequestVersion((version) => version + 1);
+      refresh();
     } catch (error) {
       setApiErrorMessage(error instanceof Error ? error.message : "CSV import failed.");
     }
@@ -741,7 +550,7 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       setEightcapDialogOpen(false);
       setEightcapFile(null);
       setEightcapPreview(null);
-      setRequestVersion((version) => version + 1);
+      refresh();
     } catch (error) {
       setApiErrorMessage(error instanceof Error ? error.message : "Could not import Eightcap CSV.");
     } finally {
