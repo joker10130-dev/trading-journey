@@ -19,6 +19,9 @@ model User {
   journals     TradingJournal[]
   sessions     Session[]
   accountTokens AccountToken[]
+  tradingAccounts TradingAccount[]
+  brokerImports BrokerImport[]
+  importedOrders ImportedOrder[]
 }
 
 model AuthRateLimit {
@@ -95,6 +98,70 @@ model AccountToken {
 
   @@index([userId, purpose])
   @@index([expiresAt])
+}
+
+model TradingAccount {
+  id              String          @id @default(cuid())
+  userId          String
+  name            String          @db.VarChar(80)
+  baseCurrency    String          @default("USD") @db.Char(3)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerImports   BrokerImport[]
+  importedOrders  ImportedOrder[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model BrokerImport {
+  id              String          @id @default(cuid())
+  userId          String
+  accountId       String
+  source          String          @db.VarChar(80)
+  filename        String          @db.VarChar(255)
+  timezone        String          @db.VarChar(80)
+  summaryJson     Json?
+  importedAt      DateTime        @default(now())
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account         TradingAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  importedOrders  ImportedOrder[]
+
+  @@index([userId, importedAt])
+  @@index([accountId, importedAt])
+}
+
+model ImportedOrder {
+  id              String          @id @default(cuid())
+  userId          String
+  accountId       String
+  importId        String
+  externalOrderId String          @db.VarChar(160)
+  positionId      String?         @db.VarChar(160)
+  symbol          String          @db.VarChar(32)
+  side            String          @db.VarChar(16)
+  type            String          @db.VarChar(32)
+  status          String          @db.VarChar(16)
+  qty             Decimal         @db.Decimal(12, 4)
+  filledQty      Decimal         @db.Decimal(12, 4)
+  limitPrice      Decimal?        @db.Decimal(18, 8)
+  stopPrice       Decimal?        @db.Decimal(18, 8)
+  avgFillPrice    Decimal?        @db.Decimal(18, 8)
+  commission      Decimal?        @db.Decimal(18, 2)
+  closedPnl       Decimal?        @db.Decimal(18, 2)
+  netClosedPnl    Decimal?        @db.Decimal(18, 2)
+  updateTimeUtc   DateTime
+  rawJson         Json
+  createdAt       DateTime        @default(now())
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account         TradingAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  import          BrokerImport    @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, externalOrderId])
+  @@index([userId, updateTimeUtc])
+  @@index([accountId, positionId])
+  @@index([importId])
 }
 
 enum AccountTokenPurpose {
