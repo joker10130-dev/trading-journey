@@ -9,6 +9,9 @@ describe("buildEquityCurve", () => {
       points: "0,10 250,70 500,150",
       areaPoints: "0,10 0,10 250,70 500,150 500,10",
       zeroY: 10,
+      minEquity: -7,
+      maxEquity: 0,
+      endingEquity: -7,
       isNegative: true,
     });
   });
@@ -20,6 +23,9 @@ describe("buildEquityCurve", () => {
       points: "0,80 250,10 500,150",
       areaPoints: "0,80 0,80 250,10 500,150 500,80",
       zeroY: 80,
+      minEquity: -4,
+      maxEquity: 4,
+      endingEquity: -4,
       isNegative: true,
     });
   });
@@ -29,6 +35,9 @@ describe("buildEquityCurve", () => {
 
     expect(curve?.points).toBe("0,150 500,10");
     expect(curve?.zeroY).toBe(150);
+    expect(curve?.minEquity).toBe(0);
+    expect(curve?.maxEquity).toBe(5);
+    expect(curve?.endingEquity).toBe(5);
   });
 
   it("returns no geometry when there is no daily P&L", () => {

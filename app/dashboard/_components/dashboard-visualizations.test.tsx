@@ -47,7 +47,19 @@ describe("Dashboard visualizations", () => {
     const markup = renderToStaticMarkup(createElement(EquityCurve, { dailyData: [] }));
 
     expect(markup).toContain('class="equity-empty-state"');
-    expect(markup).toContain('role="img" aria-label="Equity curve"');
-    expect(markup).toContain("No trades yet");
+    expect(markup).toContain('role="img" aria-label="Cumulative P&amp;L"');
+    expect(markup).toContain("No closed trades yet");
+  });
+
+  it("shows the scale and period result for cumulative P&L", () => {
+    const markup = renderToStaticMarkup(createElement(EquityCurve, {
+      dailyData: [{ date: "2025-01-15", pnl: -12.5 }],
+      currency: "USD",
+    }));
+
+    expect(markup).toContain("Scale");
+    expect(markup).toContain("-$12.50 to $0.00");
+    expect(markup).toContain("Period P&amp;L");
+    expect(markup).toContain('aria-label="Cumulative P&amp;L from -$12.50 to $0.00, ending at -$12.50"');
   });
 });

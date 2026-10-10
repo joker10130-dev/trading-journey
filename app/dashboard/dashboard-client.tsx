@@ -54,7 +54,7 @@ import {
   type UserProfile,
 } from "@/app/dashboard/_lib/dashboard-types";
 
-const filters = ["This Month", "Last Month", "Last Quarter", "Last Year", "Eternal"];
+const filters = ["This Month", "Last Month", "Last Quarter", "Last Year", "Last 9 Years"];
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 type BrowserRecognition = {
@@ -641,16 +641,9 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
         {apiErrorMessage && <div className="dashboard-alert" role="alert">{apiErrorMessage}<button onClick={() => setApiErrorMessage("")} aria-label="Dismiss error"><X size={15} /></button></div>}
         {importMessage && <div className="dashboard-notice" role="status">{importMessage}<button onClick={() => setImportMessage("")} aria-label="Dismiss import status"><X size={15} /></button></div>}
 
-        <section className="panel" style={{ marginTop: "17px", padding: "20px" }}>
-          <div className="panel-header">
-            <div><div className="eyebrow">EQUITY TRACKING</div><h2>Account equity curve</h2></div>
-          </div>
-          <EquityCurve dailyData={analytics.daily} />
-        </section>
-
         <section className="metrics-grid" id="performance" aria-label="Trading performance" aria-busy={loading}>
-          <MetricCard title="Net P&L" value={money(analytics.netPnl, analytics.currency)} subtitle={<span className={analytics.netPnl >= 0 ? "text-profit" : "text-loss"}>{analytics.netPnl >= 0 ? "↗ Realized profit" : "↘ Realized loss"}</span>} icon={TrendingUp} color="#16c98d">
-            <Sparkline values={pnlSpark} color="#16c98d" />
+          <MetricCard title="Net P&L" value={money(analytics.netPnl, analytics.currency)} subtitle={<span className={analytics.netPnl >= 0 ? "text-profit" : "text-loss"}>{analytics.netPnl >= 0 ? "↗ Realized profit" : "↘ Realized loss"}</span>} icon={TrendingUp} color={analytics.netPnl >= 0 ? "#16c98d" : "#ff5c66"}>
+            <Sparkline values={pnlSpark} color={analytics.netPnl >= 0 ? "#16c98d" : "#ff5c66"} />
           </MetricCard>
           <article className="metric-card emotion-card">
             <div className="metric-copy"><div className="metric-title">Journal composure <Smile size={16} color="#f5a25d" /></div><div className="metric-value">{emotionScores.length ? emotionAverage : "—"}<span className="metric-unit">/ 100</span></div><div className="metric-subtitle">{emotionScores.length ? `${emotionScores.length} scored reflections` : "No composure scores yet"}</div></div>
@@ -665,6 +658,13 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
           </MetricCard>
         </section>
         <div className="analytics-strip"><span>Planned R:R <strong>{analytics.rewardRiskRatio === null ? "—" : `${analytics.rewardRiskRatio}:1`}</strong></span><span>Max drawdown <strong className="text-loss">{money(analytics.maxDrawdown, analytics.currency)}</strong></span><span>Closed trades <strong>{analytics.tradeCount}</strong></span><span title="Pearson correlation on days with both a saved composure score and realized P&L; not evidence of causation.">Composure/P&amp;L correlation <strong>{analytics.emotionPnlCorrelation === null ? "Need 3+ scored days" : analytics.emotionPnlCorrelation.toFixed(2)}</strong></span><span>{loading ? "Refreshing…" : `${analytics.tradingDays} trading days`}</span></div>
+
+        <section className="equity-panel panel">
+          <div className="panel-header">
+            <div><div className="eyebrow">REALIZED PERFORMANCE</div><h2>Cumulative P&amp;L</h2></div>
+          </div>
+          <EquityCurve dailyData={analytics.daily} currency={analytics.currency} />
+        </section>
 
         <section className="ai-tools panel" aria-labelledby="ai-tools-title">
           <div className="panel-header ai-tools-heading">

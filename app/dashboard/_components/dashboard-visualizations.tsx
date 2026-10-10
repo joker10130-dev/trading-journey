@@ -32,25 +32,38 @@ export function EmotionChart({ values }: { values: number[] }) {
   );
 }
 
-export function EquityCurve({ dailyData }: { dailyData: { date: string; pnl: number }[] }) {
+export function EquityCurve({
+  dailyData,
+  currency = "USD",
+}: {
+  dailyData: { date: string; pnl: number }[];
+  currency?: string;
+}) {
   const curve = buildEquityCurve(dailyData);
   if (!curve) {
-    return <div className="equity-empty-state" role="img" aria-label="Equity curve">No trades yet</div>;
+    return <div className="equity-empty-state" role="img" aria-label="Cumulative P&L">No closed trades yet</div>;
   }
   const curveColor = curve.isNegative ? "#ff5c66" : "#16c98d";
 
   return (
-    <svg className="equity-chart" viewBox="0 0 500 200" preserveAspectRatio="none" role="img" aria-label="Equity curve over time">
-      <defs>
-        <linearGradient id="equity-fill" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={curveColor} stopOpacity=".2" />
-          <stop offset="100%" stopColor={curveColor} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <line x1="0" y1={curve.zeroY} x2="500" y2={curve.zeroY} stroke="#666" strokeWidth="1" strokeDasharray="4,4" />
-      <polygon points={curve.areaPoints} fill="url(#equity-fill)" />
-      <polyline points={curve.points} fill="none" stroke={curveColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <div className="equity-chart-content">
+      <div className="equity-chart-summary">
+        <span>Scale <strong>{money(curve.minEquity, currency)} to {money(curve.maxEquity, currency)}</strong></span>
+        <span>Period P&amp;L <strong className={curve.isNegative ? "text-loss" : "text-profit"}>{money(curve.endingEquity, currency)}</strong></span>
+      </div>
+      <svg className="equity-chart" viewBox="0 0 500 200" preserveAspectRatio="none" role="img" aria-label={`Cumulative P&L from ${money(curve.minEquity, currency)} to ${money(curve.maxEquity, currency)}, ending at ${money(curve.endingEquity, currency)}`}>
+        <title>Cumulative realized P&amp;L during the selected period</title>
+        <defs>
+          <linearGradient id="equity-fill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor={curveColor} stopOpacity=".2" />
+            <stop offset="100%" stopColor={curveColor} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <line x1="0" y1={curve.zeroY} x2="500" y2={curve.zeroY} stroke="#667287" strokeWidth="1" strokeDasharray="4,4" />
+        <polygon points={curve.areaPoints} fill="url(#equity-fill)" />
+        <polyline points={curve.points} fill="none" stroke={curveColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
   );
 }
 

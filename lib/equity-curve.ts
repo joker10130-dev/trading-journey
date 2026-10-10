@@ -28,6 +28,9 @@ export function buildEquityCurve(dailyData: DailyPnl[]) {
     points,
     areaPoints: `0,${zeroY} ${points} ${chartWidth},${zeroY}`,
     zeroY,
+    minEquity,
+    maxEquity,
+    endingEquity: equityValues[equityValues.length - 1],
     isNegative: equityValues[equityValues.length - 1] < 0,
   };
 }
