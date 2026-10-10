@@ -129,7 +129,7 @@ Timelines are estimates for planning and may change as the scope evolves.
 
 **Analytics rules:** Only trades with both `closedAt` and non-null `pnl` contribute to realized metrics. Win rate counts positive-P&L trades over all realized trades, including breakeven trades in the denominator. Planned R:R is the average target-to-entry distance divided by stop-to-entry distance for realized trades that have both stop-loss and take-profit values; it is not inferred from P&L. Maximum drawdown is the largest peak-to-trough decline in cumulative realized P&L within the requested range, with starting equity set to zero. Winning-day streaks count consecutive trading days with positive net P&L; calendar days without a closed trade are ignored and a zero/loss day breaks the streak. Emotion/P&L correlation is Pearson's r on days with both a saved composure score and realized P&L, only when there are at least three matched days and both values vary; it is descriptive and does not imply causation. Timestamps and weekly grouping use UTC.
 
-**Still required before production:** Configure and verify a real PostgreSQL instance, run migrations, perform authenticated API end-to-end tests, add rate limiting and account recovery/email verification, review the broker-specific CSV formats, and review financial/currency semantics with real account data.
+**Still required before production:** Configure and verify a real PostgreSQL instance, run migrations, perform authenticated API end-to-end tests, review the broker-specific CSV formats, and review financial/currency semantics with real account data.
 
 **Exit criteria for Phase 3:** PostgreSQL-backed flows pass end-to-end tests; analytics rules are accepted and verified; and CSV imports are validated against the intended broker statements.
 
@@ -182,6 +182,8 @@ Trades and journals are scoped to their owner. Before production use, review mon
 
 ## Environment variables
 
+Authentication registration is limited to 5 requests per IP and 3 per email per hour. Login is limited to 30 requests per IP and 10 per email per 15 minutes. Counters are stored in PostgreSQL, with HMAC-SHA-256 hashed keys so raw email/IP values are not persisted in the rate-limit table. Set a long random `AUTH_RATE_LIMIT_SECRET` in production; the database URL is used as a fallback. `AUTH_CLIENT_IP_HEADER` must name a header overwritten by your trusted ingress/proxy; do not trust a client-controlled forwarding header. The local default is `x-forwarded-for`. Both variables are included in `.env.example` and passed into the Compose app.
+
 A sample connection string is provided in `.env.example`:
 
 ```env
@@ -228,7 +230,7 @@ compose*.yaml         Local database, application, and optional monitoring servi
 ## Scope and limitations
 
 - A PostgreSQL server is required to register/sign in or use the dashboard APIs; database-backed end-to-end behavior could not be verified without a running database.
-- Account authentication is a starter implementation. Add abuse controls, account recovery, email verification, and operational session cleanup before exposing it publicly.
+- Account authentication includes database-backed registration/login rate limits, but still needs trusted-proxy configuration, account recovery/email verification, and operational session cleanup before exposing it publicly.
 - The analytics currency selector reports P&L within one currency at a time. It does not convert between currencies.
 - CSV timestamp conventions depend on the source broker; normalize to UTC and verify imported values before relying on analytics.
 - AI routes require server-side `OPENAI_API_KEY`; AI tools remain unavailable until it is configured.
