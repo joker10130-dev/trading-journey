@@ -60,6 +60,18 @@ type DashboardData = {
 };
 
 type UserProfile = { id: string; email: string; name: string | null };
+type TradingAccount = { id: string; name: string; baseCurrency: string };
+type EightcapPreview = {
+  filename: string;
+  timezone: string;
+  summary: { totalRows: number; filledRows: number; cancelledRows: number; rejectedRows: number; errorRows: number };
+  positions: {
+    positionId: string; symbol: string; direction: "LONG" | "SHORT" | null; entryQty: string;
+    entryPrice: string | null; exitQty: string; exitPrice: string | null; netClosedPnl: string | null;
+    status: "open" | "closed" | "needs_review"; issues: { message: string; rowNumbers: number[] }[];
+  }[];
+  exceptions: { rowNumber: number; message: string }[];
+};
 type EmotionAnalysis = {
   sentiment: "positive" | "neutral" | "negative" | "mixed";
   composureScore: number;
@@ -215,6 +227,13 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
   const [editingTradeId, setEditingTradeId] = useState<string | null>(null);
   const [tradeRecords, setTradeRecords] = useState<TradeRecord[]>([]);
   const [importMessage, setImportMessage] = useState("");
+  const [tradingAccounts, setTradingAccounts] = useState<TradingAccount[]>([]);
+  const [eightcapDialogOpen, setEightcapDialogOpen] = useState(false);
+  const [eightcapFile, setEightcapFile] = useState<File | null>(null);
+  const [eightcapAccountId, setEightcapAccountId] = useState("");
+  const [eightcapTimezone, setEightcapTimezone] = useState("Asia/Bangkok");
+  const [eightcapPreview, setEightcapPreview] = useState<EightcapPreview | null>(null);
+  const [eightcapBusy, setEightcapBusy] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
   const [tradeForm, setTradeForm] = useState({
     pair: "", side: "BUY" as "BUY" | "SELL", entryPrice: "", exitPrice: "", stopLoss: "", takeProfit: "",
@@ -223,6 +242,17 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
   });
   const [journalEmotion, setJournalEmotion] = useState("");
   useEffect(() => () => speechRecognitionRef.current?.stop(), []);
+  useEffect(() => {
+    if (!eightcapDialogOpen) return;
+    void fetch("/api/trading-accounts", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error?.message ?? "Could not load trading accounts.");
+        setTradingAccounts(payload.accounts as TradingAccount[]);
+        setEightcapAccountId((current) => current || payload.accounts[0]?.id || "");
+      })
+      .catch((error) => setApiErrorMessage(error instanceof Error ? error.message : "Could not load trading accounts."));
+  }, [eightcapDialogOpen]);
   const calendarDays = useMemo(() => getCalendarDays(year, month), [year, month]);
   const monthName = new Date(year, month).toLocaleString("en-US", { month: "long", year: "numeric" });
   const dateRange = `${new Date(`${from}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${new Date(`${to}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
@@ -591,6 +621,14 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
 
   const importCsv = async (file?: File) => {
     if (!file) return;
+    const firstLine = (await file.slice(0, 2048).text()).split(/\r?\n/, 1)[0] ?? "";
+    const normalizedHeader = firstLine.toLowerCase().replace(/[^a-z0-9,]/g, "");
+    if (normalizedHeader.includes("symbol,side,type,qty,filledqty") && normalizedHeader.includes("positionid")) {
+      setEightcapFile(file);
+      setEightcapPreview(null);
+      setEightcapDialogOpen(true);
+      return;
+    }
     setImportMessage("");
     const form = new FormData();
     form.set("file", file);
@@ -605,6 +643,50 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
       setRequestVersion((version) => version + 1);
     } catch (error) {
       setApiErrorMessage(error instanceof Error ? error.message : "CSV import failed.");
+    }
+  };
+
+  const previewEightcap = async () => {
+    if (!eightcapFile || !eightcapTimezone.trim()) return;
+    setEightcapBusy(true);
+    setApiErrorMessage("");
+    const form = new FormData();
+    form.set("file", eightcapFile);
+    form.set("accountId", eightcapAccountId);
+    form.set("timezone", eightcapTimezone);
+    try {
+      const response = await fetch("/api/import/eightcap/preview", { method: "POST", body: form });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Could not preview Eightcap CSV.");
+      setEightcapPreview(payload as EightcapPreview);
+    } catch (error) {
+      setApiErrorMessage(error instanceof Error ? error.message : "Could not preview Eightcap CSV.");
+    } finally {
+      setEightcapBusy(false);
+    }
+  };
+
+  const confirmEightcap = async () => {
+    if (!eightcapFile || !eightcapAccountId || !eightcapTimezone.trim()) return;
+    setEightcapBusy(true);
+    setApiErrorMessage("");
+    const form = new FormData();
+    form.set("file", eightcapFile);
+    form.set("accountId", eightcapAccountId);
+    form.set("timezone", eightcapTimezone);
+    try {
+      const response = await fetch("/api/import/eightcap", { method: "POST", body: form });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Could not import Eightcap CSV.");
+      setImportMessage(`Imported ${payload.importedOrders} broker orders; skipped ${payload.duplicates} duplicates.`);
+      setEightcapDialogOpen(false);
+      setEightcapFile(null);
+      setEightcapPreview(null);
+      setRequestVersion((version) => version + 1);
+    } catch (error) {
+      setApiErrorMessage(error instanceof Error ? error.message : "Could not import Eightcap CSV.");
+    } finally {
+      setEightcapBusy(false);
     }
   };
 
@@ -844,6 +926,22 @@ export default function DashboardClient({ user }: { user: UserProfile }) {
           {tradeError && <div className="auth-error trade-form-wide" role="alert">{tradeError}</div>}
           <div className="trade-form-actions trade-form-wide"><button type="button" className="button button-quiet" onClick={() => setTradeDialogOpen(false)}>Cancel</button><button className="button button-primary"><Plus size={15} /> Save trade</button></div>
         </form>
+      </section></div>}
+      {eightcapDialogOpen && <div className="modal-backdrop" role="presentation" onClick={() => { if (!eightcapBusy) setEightcapDialogOpen(false); }}><section className="trade-modal panel trade-form-modal" role="dialog" aria-modal="true" aria-labelledby="eightcap-import-title" onClick={(event) => event.stopPropagation()}>
+        <button className="icon-button modal-close" onClick={() => { if (!eightcapBusy) setEightcapDialogOpen(false); }} aria-label="Close Eightcap import"><X size={18} /></button>
+        <div className="eyebrow">BROKER IMPORT</div><h2 id="eightcap-import-title">Import Eightcap order history</h2>
+        <p className="modal-copy">{eightcapFile?.name} · Preview first, then confirm to save orders.</p>
+        <div className="trade-form">
+          <label>Trading account<select value={eightcapAccountId} onChange={(event) => setEightcapAccountId(event.target.value)} disabled={eightcapBusy}><option value="">Select account</option>{tradingAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} ({account.baseCurrency})</option>)}</select></label>
+          <label>Source timezone<input value={eightcapTimezone} onChange={(event) => setEightcapTimezone(event.target.value)} placeholder="Asia/Bangkok" disabled={eightcapBusy} /></label>
+          <div className="trade-form-actions trade-form-wide"><button type="button" className="button button-quiet" onClick={() => setEightcapDialogOpen(false)} disabled={eightcapBusy}>Cancel</button><button type="button" className="button button-primary" onClick={() => void previewEightcap()} disabled={eightcapBusy || !eightcapFile || !eightcapAccountId}>{eightcapBusy ? "Working…" : "Preview CSV"}</button></div>
+        </div>
+        {eightcapPreview && <div className="import-preview" aria-live="polite">
+          <p><strong>{eightcapPreview.summary.totalRows}</strong> rows · <strong>{eightcapPreview.summary.filledRows}</strong> filled · {eightcapPreview.summary.cancelledRows} cancelled · {eightcapPreview.summary.rejectedRows} rejected</p>
+          <div className="import-preview-list">{eightcapPreview.positions.map((position) => <article key={position.positionId} className="import-preview-card"><strong>{position.symbol} · {position.direction ?? "Unknown"}</strong><span>{position.entryQty} @ {position.entryPrice ?? "—"} → {position.exitQty} @ {position.exitPrice ?? "Open"}</span><small className={position.status === "needs_review" ? "text-loss" : position.status === "closed" ? "text-profit" : "muted"}>{position.status}{position.issues.length ? ` · ${position.issues.length} issue(s)` : ""}</small></article>)}</div>
+          {eightcapPreview.exceptions.length > 0 && <p className="auth-error">{eightcapPreview.exceptions.length} order(s) need review because they have no Position ID.</p>}
+          <button type="button" className="button button-primary" onClick={() => void confirmEightcap()} disabled={eightcapBusy || !eightcapAccountId}>Confirm and save orders</button>
+        </div>}
       </section></div>}
     </main>
   );
